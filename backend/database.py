@@ -17,11 +17,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Serverless environments (Vercel, AWS Lambda) have a read-only filesystem outside /tmp
-if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or not os.access(BASE_DIR, os.W_OK):
-    STORAGE_DIR = "/tmp/acadformat_storage"
-else:
-    STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+
+def _resolve_storage_dir():
+    if os.environ.get("STORAGE_DIR"):
+        return os.environ["STORAGE_DIR"]
+    local_storage = os.path.join(BASE_DIR, "storage")
+    try:
+        os.makedirs(local_storage, exist_ok=True)
+        test_file = os.path.join(local_storage, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("1")
+        os.remove(test_file)
+        return local_storage
+    except Exception:
+        fallback = "/tmp/acadformat_storage"
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
+
+STORAGE_DIR = _resolve_storage_dir()
 LOCAL_DB_PATH = os.path.join(STORAGE_DIR, "acadformat.db")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")

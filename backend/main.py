@@ -4,6 +4,15 @@ Includes document analysis, UBa standard restructuring, authentication, device l
 MTN MoMo / Orange Money paywall (250 FCFA / 7 days), and segmented Admin / Super Admin console.
 """
 import os
+import sys
+
+# Ensure root dir and parent dirs are on sys.path in serverless runtime
+_curr_dir = os.path.dirname(os.path.abspath(__file__))
+_root_dir = os.path.dirname(_curr_dir)
+for _p in [_root_dir, _curr_dir, os.getcwd()]:
+    if _p and _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import uuid
 import shutil
 import json
@@ -36,11 +45,24 @@ from backend.database import (
 )
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Serverless environments (Vercel, AWS Lambda) have a read-only filesystem outside /tmp
-if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or not os.access(BASE_DIR, os.W_OK):
-    STORAGE_DIR = "/tmp/acadformat_storage"
-else:
-    STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+
+def _resolve_storage_dir():
+    if os.environ.get("STORAGE_DIR"):
+        return os.environ["STORAGE_DIR"]
+    local_storage = os.path.join(BASE_DIR, "storage")
+    try:
+        os.makedirs(local_storage, exist_ok=True)
+        test_file = os.path.join(local_storage, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("1")
+        os.remove(test_file)
+        return local_storage
+    except Exception:
+        fallback = "/tmp/acadformat_storage"
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
+
+STORAGE_DIR = _resolve_storage_dir()
 
 REACT_DIST_DIR = os.path.join(BASE_DIR, "frontend-react", "dist")
 FRONTEND_DIR = REACT_DIST_DIR if os.path.isdir(REACT_DIST_DIR) else os.path.join(BASE_DIR, "frontend")
