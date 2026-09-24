@@ -512,10 +512,21 @@ def build_cover_page(doc: docx.Document, meta: DocumentMetadata, doc_type: str =
             r_sup_rank.font.name = "Times New Roman"
             r_sup_rank.font.size = Pt(11)
 
-    # Date at bottom (anchored cleanly towards bottom margin)
+    # Date at bottom (anchored cleanly towards bottom margin, matching Page 11 template at y ~ 110 pt)
+    title_len = len(meta.title or "")
+    num_sups = len(meta.supervisors or [1])
+    date_space_before = 235
+    if title_len > 120:
+        date_space_before -= 35
+    elif title_len < 60:
+        date_space_before += 20
+    if num_sups > 1:
+        date_space_before -= (num_sups - 1) * 30
+    date_space_before = max(70, date_space_before)
+
     p_date = doc.add_paragraph()
     p_date.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_date.paragraph_format.space_before = Pt(56)
+    p_date.paragraph_format.space_before = Pt(date_space_before)
     p_date.paragraph_format.space_after = Pt(0)
     
     r_date = p_date.add_run(f"{meta.submission_month.upper()} {meta.submission_year}")
@@ -1722,16 +1733,26 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         # Find starting child index in source_docx if available
         source_start_elem_idx = -1
         if source_docx:
-            first_body_txt = body_paras[0].get("text", "").strip()
+            first_body_txt = body_paras[0].get("text", "").strip() if body_paras else ""
+            clean_first = re.sub(r'\s+', ' ', first_body_txt).strip().upper()
             for s_idx, child in enumerate(source_docx.element.body):
                 if child.tag.endswith('p'):
                     p_test = docx.text.paragraph.Paragraph(child, source_docx)
-                    if p_test.text.strip() == first_body_txt:
+                    clean_test = re.sub(r'\s+', ' ', p_test.text).strip().upper()
+                    if clean_test == clean_first:
                         source_start_elem_idx = s_idx
                         break
+            if source_start_elem_idx < 0:
+                for s_idx, child in enumerate(source_docx.element.body):
+                    if child.tag.endswith('p'):
+                        p_test = docx.text.paragraph.Paragraph(child, source_docx)
+                        txt_up = p_test.text.strip().upper()
+                        if re.match(r'^(?:CHAPTER\s+1|CHAPITRE\s+1|1\.1\b)', txt_up):
+                            source_start_elem_idx = s_idx
+                            break
 
         # Auto-inject Chapter 1 heading if missing
-        first_text = body_paras[0].get("text", "").strip()
+        first_text = body_paras[0].get("text", "").strip() if body_paras else ""
         has_explicit_ch1 = bool(re.match(r'^(?:CHAPTER|CHAPITRE)\s+(?:1|I|ONE)\b', first_text, re.IGNORECASE))
         is_sub_1_1 = bool(re.match(r'^1\.[01](?:\s+|$)', first_text))
         if is_sub_1_1 and not has_explicit_ch1 and req.doc_type != "assignment":
@@ -1743,13 +1764,18 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
             for child in source_docx.element.body[source_start_elem_idx:]:
                 if child.tag.endswith('tbl'):
                     tbl_copy = copy.deepcopy(child)
-                    doc._body._body.append(tbl_copy)
+                    doc._body._body._insert_tbl(tbl_copy)
                     t = docx.table.Table(tbl_copy, doc)
                     t.alignment = WD_TABLE_ALIGNMENT.CENTER
                 elif child.tag.endswith('p'):
                     sp = docx.text.paragraph.Paragraph(child, source_docx)
                     raw_t = sp.text.strip()
-                    if not raw_t:
+                    has_drawing = bool(child.xpath('.//w:drawing') or child.xpath('.//w:pict'))
+                    if not raw_t and not has_drawing:
+                        continue
+                    if has_drawing and not raw_t:
+                        p_copy = copy.deepcopy(child)
+                        doc._body._body._insert_p(p_copy)
                         continue
                     if is_standalone_prelim_header(raw_t):
                         continue

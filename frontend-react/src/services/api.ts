@@ -1,6 +1,6 @@
 import { AcademicData, AuditResult, DocumentMetadata, Eligibility, User } from '../types';
 
-const API_BASE = (import.meta.env.VITE_API_URL ? String(import.meta.env.VITE_API_URL).replace(/\/+$/, '') : '') + '/api';
+const API_BASE = ((import.meta as any)?.env?.VITE_API_URL ? String((import.meta as any).env.VITE_API_URL).replace(/\/+$/, '') : '') + '/api';
 
 export function getDeviceFingerprint(): string {
   let devId = localStorage.getItem('acadformat_device_id');
