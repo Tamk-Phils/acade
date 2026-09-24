@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build --prefix frontend-react",
+  "buildCommand": "npm install --prefix frontend-react && npm run build --prefix frontend-react",
   "outputDirectory": "frontend-react/dist",
   "rewrites": [
     {
