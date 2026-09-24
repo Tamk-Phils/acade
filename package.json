@@ -1,0 +1,13 @@
+{
+  "name": "acadformat",
+  "version": "2.3.0",
+  "private": true,
+  "description": "University of Bamenda & CATUC Academic Identity & Automated Formatting Platform",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend-react",
+    "build": "npm run build --prefix frontend-react",
+    "preview": "npm run preview --prefix frontend-react"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

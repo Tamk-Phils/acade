@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AcadFormat — University of Bamenda Academic Identity & Document Restructuring</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <img src="/assets/uba_logo.png" alt="University of Bamenda Crest" class="brand-logo uba-logo">
+        <div class="brand-text">
+          <div class="republic-sub">REPUBLIC OF CAMEROON • REPUBLIQUE DU CAMEROUN</div>
+          <h1 class="brand-title">AcadFormat</h1>
+          <p class="brand-subtitle">The University of Bamenda • Academic Identity & Document Restructuring Platform</p>
+        </div>
+      </div>
+
+      <!-- Right Header Actions (Engine Badge & User Auth Nav) -->
+      <div class="header-right-group">
+        <div class="header-badge" id="backendBadge">
+          <span class="pulse-dot"></span>
+          <span id="backendBadgeText">AcadFormat Engine Active</span>
+        </div>
+
+        <!-- Dynamic User Auth Section -->
+        <div class="user-nav-group" id="userNavGroup">
+          <!-- Logged Out State -->
+          <div id="loggedOutControls" class="auth-btn-group">
+            <button class="btn btn-nav-secondary" id="btnOpenSignIn">Sign In</button>
+            <button class="btn btn-nav-primary" id="btnOpenSignUp">Register Free</button>
+          </div>
+
+          <!-- Logged In State -->
+          <div id="loggedInControls" class="user-pill-container hidden">
+            <div class="user-pill">
+              <span class="user-avatar" id="navUserAvatar">U</span>
+              <div class="user-meta">
+                <span class="user-name" id="navUserName">Candidate</span>
+                <div class="user-badges">
+                  <span class="badge-role" id="navUserRole">Student</span>
+                  <span class="badge-status badge-trial" id="navUserStatus">Trial: 72h</span>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-chip btn-admin-nav hidden" id="btnNavAdmin">
+              🛡️ Admin Console
+            </button>
+            <button class="btn btn-chip btn-logout" id="btnNavLogout" title="Sign Out">
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="main-content">
+    <!-- Top Configuration & Demo Bar -->
+    <section class="control-panel card">
+      <div class="panel-grid-top">
+        <!-- Document Type -->
+        <div class="config-group">
+          <label class="control-label" for="docTypeSelect">Document Type & Degree</label>
+          <div class="select-wrapper">
+            <select id="docTypeSelect" class="custom-select">
+              <optgroup label="Undergraduate & Professional">
+                <option value="dissertation_bsc">BSc Dissertation (Bachelor of Science)</option>
+                <option value="project_btech" selected>BTech Final Year Project (Bachelor of Technology)</option>
+                <option value="project_hnd">HND Capstone Project (Higher National Diploma)</option>
+              </optgroup>
+              <optgroup label="Postgraduate & Masters">
+                <option value="dissertation_mtech">MTech Dissertation / Project (Master of Technology)</option>
+                <option value="dissertation_msc">MSc Dissertation (Master of Science)</option>
+                <option value="thesis_phd">PhD Doctoral Thesis (Doctor of Philosophy)</option>
+              </optgroup>
+              <optgroup label="Professional & Coursework">
+                <option value="internship">Internship Report (FEMS, COLTECH & All Faculties)</option>
+                <option value="proposal">Research / Project Proposal</option>
+                <option value="assignment">Course Technical Assignment (with Dual Header)</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        <!-- Establishment / Faculty -->
+        <div class="config-group">
+          <label class="control-label" for="schoolSelect">Establishment / School</label>
+          <div class="select-wrapper">
+            <select id="schoolSelect" class="custom-select">
+              <option value="coltech" selected>College of Technology (COLTECH)</option>
+              <option value="fs">Faculty of Science (FS)</option>
+              <option value="fems">Faculty of Economics and Management Sciences (FEMS)</option>
+              <option value="fa">Faculty of Arts (FA)</option>
+              <option value="fed">Faculty of Education (FED)</option>
+              <option value="flps">Faculty of Laws and Political Science (FLPS)</option>
+              <option value="fhs">Faculty of Health Sciences (FHS)</option>
+              <option value="hicm">Higher Institute of Commerce and Management (HICM)</option>
+              <option value="hitl">Higher Institute of Transport and Logistics (HITL)</option>
+              <option value="httc">Higher Technical Teacher Training College (HTTC / ENSET)</option>
+              <option value="ens">Higher Teacher Training College (ENS Bambili)</option>
+              <option value="nahpi">National Higher Polytechnic Institute (NAHPI)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Department (Dynamic) -->
+        <div class="config-group">
+          <label class="control-label" for="deptSelect">Department of Origin</label>
+          <div class="select-wrapper">
+            <select id="deptSelect" class="custom-select">
+              <!-- Populated dynamically via JS -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Header / Logo Mode -->
+        <div class="config-group">
+          <label class="control-label" for="headerModeSelect">Header & Logo Layout</label>
+          <div class="select-wrapper">
+            <select id="headerModeSelect" class="custom-select">
+              <option value="center_crest" selected>Official Central Crest (Standard for Theses, Projects, Proposals)</option>
+              <option value="dual_logo">Dual Logo Header (UBa + School/Assignment Crest)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Test Samples Strip -->
+      <div class="samples-strip">
+        <span class="samples-label">Load Official Sample:</span>
+        <button class="btn btn-chip" id="btnLoadUserProposal">
+          📄 MTech Proposal (Phishing Detection)
+        </button>
+        <button class="btn btn-chip" id="btnLoadColtechSample">
+          📄 COLTECH BSc Dissertation (Cloud Backup)
+        </button>
+        <button class="btn btn-chip" id="btnLoadInternshipSample">
+          📄 UBa Internship Report (FEMS)
+        </button>
+      </div>
+    </section>
+
+    <!-- Upload & Drop Area -->
+    <section class="upload-section card" id="dropZone">
+      <input type="file" id="fileInput" accept=".docx,.pdf" class="file-input-hidden">
+      <div class="upload-content">
+        <div class="upload-icon-wrapper">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="upload-text">
+          <h3>Drop your Manuscript here or <span class="highlight">Browse File</span></h3>
+          <p>Accepts Word <strong>.docx</strong> or <strong>.pdf</strong> documents • Instant structural audit & reformatting</p>
+        </div>
+        <div class="upload-tags">
+          <span class="tag">4.0 cm Inside Binding Margin</span>
+          <span class="tag">Times New Roman 12pt / 1.5 Spacing</span>
+          <span class="tag">Official Bilingual Republic Banner</span>
+          <span class="tag">Automated TOC, Tables & Prelims</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Status & Progress Indicator -->
+    <div class="status-bar hidden" id="statusBar">
+      <div class="spinner"></div>
+      <span id="statusText">Analyzing document structure against University of Bamenda standards...</span>
+    </div>
+
+    <!-- Main Results Grid (Split view: Audit Scorecard & Live Document Preview) -->
+    <div class="results-grid hidden" id="resultsGrid">
+      
+      <!-- Left Column: Audit Scorecard & Reformat Controls -->
+      <div class="audit-col">
+        <!-- Score Overview Card -->
+        <div class="card score-card">
+          <div class="score-header">
+            <div>
+              <h2 class="card-title">Institutional Compliance Audit</h2>
+              <p class="card-subtitle" id="documentMetaSummary">Document Name</p>
+            </div>
+            <div class="score-gauge" id="scoreGauge">
+              <span class="score-number" id="scoreValue">90%</span>
+              <span class="score-label">UBa Score</span>
+            </div>
+          </div>
+
+          <!-- Quick Stats Pills -->
+          <div class="stats-pills">
+            <div class="stat-pill">
+              <span class="pill-label">Binding Margin</span>
+              <span class="pill-val" id="statMargin">4.0 cm</span>
+            </div>
+            <div class="stat-pill">
+              <span class="pill-label">Est. Pages</span>
+              <span class="pill-val" id="statPages">23</span>
+            </div>
+            <div class="stat-pill">
+              <span class="pill-label">Typography</span>
+              <span class="pill-val" id="statFont">TNR 12pt</span>
+            </div>
+            <div class="stat-pill">
+              <span class="pill-label">Illustrations</span>
+              <span class="pill-val" id="statIllustrations">0 / 0</span>
+            </div>
+          </div>
+
+          <!-- Reformat Action Button -->
+          <div class="action-btn-wrapper">
+            <button class="btn btn-primary btn-reformat" id="btnReformat">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+              Auto-Fix & Restructure to UBa Standard
+            </button>
+            <button class="btn btn-secondary" id="btnEditMeta" title="Edit candidate name, registration number, supervisor">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              Edit Metadata
+            </button>
+          </div>
+        </div>
+
+        <!-- Issues & Checklist Card -->
+        <div class="card issues-card">
+          <div class="tabs-header">
+            <button class="tab-btn active" data-tab="issuesTab">Identified Issues (<span id="issuesCount">0</span>)</button>
+            <button class="tab-btn" data-tab="sectionsTab">Sections Audit (<span id="sectionsCount">0</span>)</button>
+          </div>
+
+          <div class="tab-content" id="issuesTab">
+            <div class="issues-list" id="issuesList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <div class="tab-content hidden" id="sectionsTab">
+            <div class="sections-list" id="sectionsList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Interactive Live Document Previewer & Downloads -->
+      <div class="preview-col">
+        <div class="card preview-card">
+          <div class="preview-header">
+            <div class="preview-title-group">
+              <h2 class="card-title">Live Manuscript Preview</h2>
+              <span class="preview-tag" id="previewModeTag">Official UBa Standard Output</span>
+            </div>
+            
+            <!-- Download Buttons (With Paywall / Eligibility Check) -->
+            <div class="download-group">
+              <button type="button" class="btn btn-success" id="btnDownloadDocx">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download DOCX
+              </button>
+              <button type="button" class="btn btn-pdf" id="btnDownloadPdf">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                Download PDF
+              </button>
+            </div>
+          </div>
+
+          <!-- Page Navigation Bar -->
+          <div class="preview-toolbar">
+            <div class="nav-controls">
+              <button class="tool-btn" id="btnPrevPage" title="Previous Page (Left Arrow)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <div class="page-indicator">
+                Page <input type="number" id="pageNumberInput" value="1" min="1" max="1" class="page-input"> of <span id="totalPagesSpan">1</span>
+              </div>
+              <button class="tool-btn" id="btnNextPage" title="Next Page (Right Arrow)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+
+            <div class="view-controls">
+              <button class="tool-btn" id="btnZoomOut" title="Zoom Out (-)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              <span id="zoomLevelText" class="zoom-text">100%</span>
+              <button class="tool-btn" id="btnZoomIn" title="Zoom In (+)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              <!-- Full Screen Preview Button -->
+              <button class="tool-btn btn-fullscreen" id="btnFullScreen" title="Open Full Screen Preview">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                <span>Full Screen</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Document Canvas Area -->
+          <div class="document-canvas-container" id="canvasContainer">
+            <div class="binding-margin-guide" title="4.0 cm Inside Binding Margin (Mandatory for UBa dark-black binding)">
+              <span>4.0 cm BINDING MARGIN</span>
+            </div>
+            <div class="page-viewport" id="pageViewport">
+              <img src="" alt="Document Page Preview" id="previewImage" class="preview-img">
+            </div>
+          </div>
+
+          <!-- Thumbnails Strip -->
+          <div class="thumbnail-strip" id="thumbnailStrip">
+            <!-- Dynamically populated page mini thumbnails -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Fullscreen Preview Overlay Modal -->
+  <div class="fs-modal-overlay hidden" id="fsModal">
+    <div class="fs-toolbar">
+      <div class="fs-title-group">
+        <img src="/assets/uba_logo.png" alt="UBa" class="fs-logo">
+        <span class="fs-doc-title" id="fsDocTitle">Document Preview</span>
+      </div>
+      <div class="fs-nav-group">
+        <button class="tool-btn fs-btn" id="fsBtnPrev" title="Previous Page (Left Arrow)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="fs-page-badge" id="fsPageBadge">Page 1 of 1</span>
+        <button class="tool-btn fs-btn" id="fsBtnNext" title="Next Page (Right Arrow)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <div class="fs-zoom-group">
+        <button class="tool-btn fs-btn" id="fsBtnZoomOut" title="Zoom Out">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <span id="fsZoomText" class="zoom-text" style="color: #fff;">100%</span>
+        <button class="tool-btn fs-btn" id="fsBtnZoomIn" title="Zoom In">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button class="btn btn-close-fs" id="btnCloseFs" title="Close Fullscreen (Esc)">
+          ✕ Close
+        </button>
+      </div>
+    </div>
+    <div class="fs-canvas-container" id="fsCanvasContainer">
+      <div class="fs-page-wrapper" id="fsPageWrapper">
+        <img src="" alt="Fullscreen Document Page Preview" id="fsPreviewImage" class="fs-preview-img">
+      </div>
+    </div>
+  </div>
+
+  <!-- Metadata Edit Modal -->
+  <div class="modal-overlay hidden" id="metaModal">
+    <div class="modal card">
+      <div class="modal-header">
+        <h3 class="modal-title">Edit Document Metadata</h3>
+        <button class="modal-close" id="btnCloseModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label class="control-label" for="metaTitle">Document Title</label>
+          <input type="text" id="metaTitle" class="form-input" placeholder="Title of the Dissertation / Report">
+        </div>
+        <div class="form-row grid-2">
+          <div>
+            <label class="control-label" for="metaAuthor">Candidate Name (Surname First)</label>
+            <input type="text" id="metaAuthor" class="form-input" placeholder="e.g. NJITAPON AHMED SAID ASSAN">
+          </div>
+          <div>
+            <label class="control-label" for="metaRegNo">Registration Number</label>
+            <input type="text" id="metaRegNo" class="form-input" placeholder="e.g. UBA2SPP228">
+          </div>
+        </div>
+        <div class="form-row grid-2">
+          <div>
+            <label class="control-label" for="metaDept">Department</label>
+            <input type="text" id="metaDept" class="form-input" placeholder="e.g. Computer Engineering">
+          </div>
+          <div>
+            <label class="control-label" for="metaDegree">Degree & Option</label>
+            <input type="text" id="metaDegree" class="form-input" placeholder="e.g. Master of Technology in Computer Engineering">
+          </div>
+        </div>
+        <div class="form-row grid-2">
+          <div>
+            <label class="control-label" for="metaSupervisor">Supervisor Name</label>
+            <input type="text" id="metaSupervisor" class="form-input" placeholder="e.g. PROF ONABID MATHIAS">
+          </div>
+          <div>
+            <label class="control-label" for="metaRank">Supervisor Academic Rank</label>
+            <input type="text" id="metaRank" class="form-input" placeholder="e.g. Associate Professor">
+          </div>
+        </div>
+        <div class="form-row grid-2">
+          <div>
+            <label class="control-label" for="metaMonth">Submission Month</label>
+            <input type="text" id="metaMonth" class="form-input" placeholder="e.g. AUGUST">
+          </div>
+          <div>
+            <label class="control-label" for="metaYear">Submission Year</label>
+            <input type="text" id="metaYear" class="form-input" placeholder="e.g. 2026">
+          </div>
+        </div>
+
+        <!-- Internship Extra Fields -->
+        <div class="form-row grid-2 hidden" id="internshipMetaFields">
+          <div>
+            <label class="control-label" for="metaHostCompany">Host Enterprise / Institution</label>
+            <input type="text" id="metaHostCompany" class="form-input" placeholder="e.g. CAMTEL / ENEO / UBa IT Center">
+          </div>
+          <div>
+            <label class="control-label" for="metaFieldSupervisor">Field / Professional Supervisor</label>
+            <input type="text" id="metaFieldSupervisor" class="form-input" placeholder="e.g. Engr. Field Supervisor">
+          </div>
+        </div>
+
+        <!-- Assignment & Group Presentation Fields -->
+        <div id="assignmentMetaFields" class="hidden" style="margin-top: 0.5rem;">
+          <div class="form-row grid-2">
+            <div>
+              <label class="control-label" for="metaCourseCode">Course Code & Title</label>
+              <input type="text" id="metaCourseCode" class="form-input" placeholder="e.g. CE401: Software Engineering">
+            </div>
+            <div>
+              <label class="control-label" for="metaLecturer">Course Lecturer / Examiner</label>
+              <input type="text" id="metaLecturer" class="form-input" placeholder="e.g. Dr. Lecturer Name">
+            </div>
+          </div>
+
+          <div class="form-row grid-2">
+            <div>
+              <label class="control-label" for="metaAssignmentType">Assignment Mode</label>
+              <select id="metaAssignmentType" class="form-input">
+                <option value="personal">Personal / Individual Assignment (Single Candidate)</option>
+                <option value="group">Group Assignment / Presentation (Multiple Students)</option>
+              </select>
+            </div>
+            <div id="groupNameWrapper" class="hidden">
+              <label class="control-label" for="metaGroupName">Group Name / Number</label>
+              <input type="text" id="metaGroupName" class="form-input" placeholder="e.g. Group 4 / Team Alpha">
+            </div>
+          </div>
+
+          <!-- Group Members Section -->
+          <div id="groupMembersSection" class="group-members-section hidden">
+            <div class="group-members-header">
+              <div>
+                <h4 style="font-size:0.92rem;font-weight:700;color:var(--uba-navy);">Group Member Roster</h4>
+                <p id="groupOverflowNotice" style="font-size:0.78rem;color:#64748b;margin-top:2px;">
+                  ℹ️ Up to 5 members fit directly on the Cover Page. > 5 members automatically routes to a dedicated Page 2 register.
+                </p>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <label style="font-size:0.8rem;display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--uba-navy);font-weight:600;">
+                  <input type="checkbox" id="chkShowGrading" checked>
+                  Grading / Marks Column
+                </label>
+                <button type="button" class="btn btn-secondary" id="btnAddMember" style="padding:4px 10px;font-size:0.8rem;">
+                  + Add Member
+                </button>
+              </div>
+            </div>
+            <div class="members-table-wrapper" style="max-height: 220px; overflow-y: auto; margin-top: 8px;">
+              <table class="members-input-table" id="membersTable" style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">
+                <thead>
+                  <tr style="background:#f1f5f9; text-align:left;">
+                    <th style="padding:6px;width:35px;">N°</th>
+                    <th style="padding:6px;">Full Name (Surname First)</th>
+                    <th style="padding:6px;width:150px;">Matricule</th>
+                    <th style="padding:6px;width:140px;">Role / Contribution</th>
+                    <th style="padding:6px;width:45px;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="membersTableBody">
+                  <!-- Dynamically populated rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCancelMeta">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveMeta">Save & Apply to Document</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Authentication Modal (Sign In / Register with Eye Password Toggle) -->
+  <div class="modal-overlay hidden" id="authModal">
+    <div class="modal card auth-modal">
+      <div class="modal-header">
+        <div class="auth-header-brand">
+          <img src="/assets/uba_logo.png" alt="UBa Crest" style="height:36px;">
+          <div>
+            <h3 class="modal-title" id="authModalTitle">AcadFormat Authentication</h3>
+            <p class="auth-modal-subtitle">University of Bamenda Academic Identity System</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btnCloseAuthModal">&times;</button>
+      </div>
+
+      <!-- Auth Tab Bar -->
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="tabBtnSignIn">Sign In</button>
+        <button class="auth-tab-btn" id="tabBtnSignUp">Create Account (3-Day Free Trial)</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Error / Notification Banner -->
+        <div id="authAlert" class="auth-alert hidden"></div>
+
+        <!-- 1. Sign In Form -->
+        <form id="formSignIn" class="auth-form-panel">
+          <div class="form-row">
+            <label class="control-label" for="loginIdentifier">Email or Username</label>
+            <input type="text" id="loginIdentifier" class="form-input" placeholder="e.g. candidate@univ.cm or username" required>
+          </div>
+          <div class="form-row">
+            <label class="control-label" for="loginPassword">Password</label>
+            <div class="password-input-wrapper">
+              <input type="password" id="loginPassword" class="form-input" placeholder="Enter your password" required>
+              <button type="button" class="eye-toggle-btn" data-target="loginPassword" title="Show/Hide Password">👁️</button>
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:1rem;">
+            <button type="submit" class="btn btn-primary btn-block" id="btnSubmitLogin">
+              Sign In to AcadFormat
+            </button>
+          </div>
+          <p class="auth-switch-text">
+            Don't have an account yet? <a href="#" id="linkSwitchToSignUp">Register free with 72-hour trial</a>
+          </p>
+        </form>
+
+        <!-- 2. Sign Up Form (No School Field, Eye toggles on both passwords) -->
+        <form id="formSignUp" class="auth-form-panel hidden">
+          <div class="form-row">
+            <label class="control-label" for="regFullName">Full Name (Surname First)</label>
+            <input type="text" id="regFullName" class="form-input" placeholder="e.g. NJITAPON AHMED SAID ASSAN" required>
+          </div>
+          <div class="form-row grid-2">
+            <div>
+              <label class="control-label" for="regUsername">Choose a Username</label>
+              <input type="text" id="regUsername" class="form-input" placeholder="e.g. ahmed2026" required>
+            </div>
+            <div>
+              <label class="control-label" for="regEmail">Institutional / Personal Email</label>
+              <input type="email" id="regEmail" class="form-input" placeholder="candidate@univ-bamenda.cm" required>
+            </div>
+          </div>
+          <div class="form-row grid-2">
+            <div>
+              <label class="control-label" for="regPassword">Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="regPassword" class="form-input" placeholder="Minimum 6 characters" required>
+                <button type="button" class="eye-toggle-btn" data-target="regPassword" title="Show/Hide Password">👁️</button>
+              </div>
+            </div>
+            <div>
+              <label class="control-label" for="regConfirmPassword">Confirm Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="regConfirmPassword" class="form-input" placeholder="Re-enter password" required>
+                <button type="button" class="eye-toggle-btn" data-target="regConfirmPassword" title="Show/Hide Password">👁️</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Privacy Acceptance Checkbox -->
+          <div class="form-row" style="margin-top:0.75rem;">
+            <label class="checkbox-label" style="display:flex;align-items:flex-start;gap:8px;font-size:0.84rem;color:#334155;cursor:pointer;">
+              <input type="checkbox" id="chkPrivacyConsent" required style="margin-top:3px;">
+              <span>
+                I agree to the <a href="#" id="linkOpenPrivacy" style="color:var(--uba-navy);font-weight:700;text-decoration:underline;">AcadFormat Privacy Policy & Terms</a> in compliance with Cameroonian Law No. 2010/012 on Cybersecurity.
+              </span>
+            </label>
+          </div>
+
+          <div class="form-row" style="margin-top:1rem;">
+            <button type="submit" class="btn btn-primary btn-block" id="btnSubmitSignUp">
+              Create Account & Activate 3-Day Free Trial
+            </button>
+          </div>
+          <p class="auth-switch-text">
+            Already registered? <a href="#" id="linkSwitchToSignIn">Sign in to your account</a>
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cameroon Mobile Money Paywall Modal (MTN MoMo & Orange Money - 250 FCFA) -->
+  <div class="modal-overlay hidden" id="paywallModal">
+    <div class="modal card paywall-modal">
+      <div class="modal-header" style="background:linear-gradient(135deg, var(--uba-navy-dark), var(--uba-navy)); color:#fff; border-bottom:3px solid var(--uba-gold);">
+        <div>
+          <h3 class="modal-title" style="color:#fff;">Unlock Unlimited Document Exports</h3>
+          <p style="font-size:0.8rem;color:#cbd5e1;">Cameroon Mobile Money Gateway (MTN MoMo & Orange Money)</p>
+        </div>
+        <button class="modal-close" id="btnClosePaywall" style="color:#fff;">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding:1.5rem;">
+        <!-- Reason Banner -->
+        <div class="paywall-banner" id="paywallReasonBanner">
+          <div class="paywall-icon">⚡</div>
+          <div>
+            <h4 id="paywallBannerTitle" style="font-size:0.95rem;font-weight:700;color:var(--uba-navy);">
+              3-Day Free Trial Concluded
+            </h4>
+            <p id="paywallBannerText" style="font-size:0.82rem;color:#475569;margin-top:2px;">
+              To download official, senate-compliant DOCX and PDF documents, activate a 7-day unlimited pass for only <strong>250 FCFA</strong>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Plan Summary Card -->
+        <div class="pricing-summary-card">
+          <div class="plan-price-group">
+            <span class="plan-price">250</span>
+            <span class="plan-currency">FCFA</span>
+            <span class="plan-period">/ 7 Days (1 Week)</span>
+          </div>
+          <ul class="plan-benefits">
+            <li>✓ Unlimited restructured <strong>DOCX</strong> & print-ready <strong>PDF</strong> downloads</li>
+            <li>✓ Official University of Bamenda Senate & COLTECH layout specifications</li>
+            <li>✓ Device-locked secure access & priority restructuring processing</li>
+          </ul>
+        </div>
+
+        <!-- Operator Selection -->
+        <div class="operator-selection-section">
+          <label class="control-label" style="font-weight:700;">Select Mobile Money Operator</label>
+          <div class="operator-grid">
+            <!-- MTN MoMo -->
+            <label class="operator-card selected" id="cardMtnMomo">
+              <input type="radio" name="momoOperator" value="mtn_momo" checked class="operator-radio">
+              <div class="operator-badge mtn-badge">MTN MoMo</div>
+              <span class="operator-title">MTN Mobile Money</span>
+              <span class="operator-ussd">Dial *126# to approve</span>
+            </label>
+
+            <!-- Orange Money -->
+            <label class="operator-card" id="cardOrangeMoney">
+              <input type="radio" name="momoOperator" value="orange_money" class="operator-radio">
+              <div class="operator-badge orange-badge">Orange Money</div>
+              <span class="operator-title">Orange Money</span>
+              <span class="operator-ussd">Dial *150# to approve</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Phone Number Input -->
+        <div class="form-row" style="margin-top:1rem;">
+          <label class="control-label" for="momoPhone">Cameroon Mobile Money Phone Number</label>
+          <div class="phone-input-group">
+            <span class="country-prefix">+237</span>
+            <input type="tel" id="momoPhone" class="form-input phone-input" placeholder="6XX XXX XXX" maxlength="12" required>
+          </div>
+        </div>
+
+        <!-- USSD Push Simulated Status Display -->
+        <div id="momoSimState" class="momo-sim-state hidden">
+          <div class="sim-spinner"></div>
+          <div>
+            <h5 id="simStateTitle" style="font-weight:700;color:var(--uba-navy);">Sending USSD Prompt to +237...</h5>
+            <p id="simStateDesc" style="font-size:0.8rem;color:#64748b;">
+              Please check your phone screen and enter your Mobile Money PIN to approve 250 FCFA payment to <strong>AcadFormat UBa</strong>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Pay Button -->
+        <div class="form-row" style="margin-top:1.25rem;">
+          <button type="button" class="btn btn-primary btn-block btn-pay-momo" id="btnExecuteMomoPay">
+            💳 Pay 250 FCFA & Unlock 7-Day Pass
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Segmented Admin & Super Admin Management Portal Modal -->
+  <div class="modal-overlay hidden" id="adminModal">
+    <div class="modal card admin-portal-modal">
+      <div class="modal-header admin-modal-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <img src="/assets/uba_logo.png" alt="UBa Crest" style="height:42px;">
+          <div>
+            <h3 class="modal-title" style="color:#fff;">AcadFormat Governance & Administration</h3>
+            <p style="font-size:0.8rem;color:#cbd5e1;" id="adminRoleDisplay">Role: Academic Quality Administrator</p>
+          </div>
+        </div>
+        <button class="modal-close" id="btnCloseAdminModal" style="color:#fff;">&times;</button>
+      </div>
+
+      <!-- Segmented Admin Tabs -->
+      <div class="admin-tab-bar">
+        <button class="admin-tab-btn active" data-tab="adminTabUsers">
+          👥 Registered Users
+        </button>
+        <button class="admin-tab-btn" data-tab="adminTabDocs">
+          📑 Document Audits
+        </button>
+        <button class="admin-tab-btn superadmin-only hidden" data-tab="adminTabFinance">
+          💰 Financials & Revenue
+        </button>
+        <button class="admin-tab-btn superadmin-only hidden" data-tab="adminTabSettings">
+          ⚙️ Pricing & System Config
+        </button>
+        <button class="admin-tab-btn superadmin-only hidden" data-tab="adminTabStaff">
+          🛡️ Staff & Roles
+        </button>
+      </div>
+
+      <div class="modal-body admin-modal-body">
+        <!-- 1. Tab Users -->
+        <div class="admin-tab-content active" id="adminTabUsers">
+          <div class="admin-toolbar">
+            <input type="text" id="adminUserSearchInput" class="form-input" placeholder="Search by name, username, or email..." style="max-width:380px;">
+            <button class="btn btn-secondary" id="btnRefreshUsers">🔄 Refresh Registry</button>
+          </div>
+          <div class="admin-table-wrapper">
+            <table class="admin-table" id="adminUsersTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Full Name</th>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Device ID</th>
+                  <th>Trial Status</th>
+                  <th>Subscription</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 2. Tab Documents -->
+        <div class="admin-tab-content hidden" id="adminTabDocs">
+          <div class="admin-toolbar">
+            <span style="font-size:0.88rem;color:#64748b;">Recently audited and reformatted university manuscripts:</span>
+            <button class="btn btn-secondary" id="btnRefreshDocs">🔄 Refresh Audits</button>
+          </div>
+          <div class="admin-table-wrapper">
+            <table class="admin-table" id="adminDocsTable">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Filename</th>
+                  <th>Doc Type</th>
+                  <th>Faculty</th>
+                  <th>Score</th>
+                  <th>Candidate</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="adminDocsTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 3. Tab Financials (Super Admin Only) -->
+        <div class="admin-tab-content hidden" id="adminTabFinance">
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Total Revenue</span>
+              <span class="kpi-val" id="kpiRevenue">0 FCFA</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Paid Transactions</span>
+              <span class="kpi-val" id="kpiTxCount">0</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Total Registered Users</span>
+              <span class="kpi-val" id="kpiUserCount">0</span>
+            </div>
+          </div>
+
+          <h4 style="font-size:0.95rem;font-weight:700;margin:1.25rem 0 0.5rem 0;color:var(--uba-navy);">
+            Mobile Money Operator Breakdown
+          </h4>
+          <div class="operator-kpi-grid" id="operatorBreakdownGrid">
+            <!-- Dynamically populated -->
+          </div>
+
+          <h4 style="font-size:0.95rem;font-weight:700;margin:1.25rem 0 0.5rem 0;color:var(--uba-navy);">
+            Recent Payment Ledger (MTN MoMo & Orange Money)
+          </h4>
+          <div class="admin-table-wrapper">
+            <table class="admin-table" id="adminPaymentsTable">
+              <thead>
+                <tr>
+                  <th>Ref</th>
+                  <th>Username</th>
+                  <th>Operator</th>
+                  <th>Phone</th>
+                  <th>Amount</th>
+                  <th>Paid At</th>
+                  <th>Valid Until</th>
+                </tr>
+              </thead>
+              <tbody id="adminPaymentsTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 4. Tab Settings (Super Admin Only) -->
+        <div class="admin-tab-content hidden" id="adminTabSettings">
+          <form id="formSystemConfig" style="max-width:550px;">
+            <div class="form-row">
+              <label class="control-label" for="cfgTrialHours">Free Trial Duration (Hours)</label>
+              <input type="number" id="cfgTrialHours" class="form-input" min="1" max="720" value="72" required>
+              <small style="color:#64748b;">Default: 72 hours (3 days)</small>
+            </div>
+            <div class="form-row">
+              <label class="control-label" for="cfgPriceXaf">Export Pass Price (FCFA)</label>
+              <input type="number" id="cfgPriceXaf" class="form-input" min="50" max="10000" step="50" value="250" required>
+              <small style="color:#64748b;">Default: 250 FCFA via MTN MoMo / Orange Money</small>
+            </div>
+            <div class="form-row">
+              <label class="control-label" for="cfgValidityDays">Paid Pass Validity (Days)</label>
+              <input type="number" id="cfgValidityDays" class="form-input" min="1" max="365" value="7" required>
+              <small style="color:#64748b;">Default: 7 days (1 week)</small>
+            </div>
+            <div class="form-row" style="margin-top:1.5rem;">
+              <button type="submit" class="btn btn-primary" id="btnSaveConfig">
+                Save System Configuration
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- 5. Tab Staff Roles (Super Admin Only) -->
+        <div class="admin-tab-content hidden" id="adminTabStaff">
+          <form id="formStaffRole" style="max-width:550px;">
+            <div class="form-row">
+              <label class="control-label" for="targetUserIdInput">Target User ID</label>
+              <input type="number" id="targetUserIdInput" class="form-input" placeholder="Enter user numeric ID (from Users tab)" required>
+            </div>
+            <div class="form-row">
+              <label class="control-label" for="targetUserRoleSelect">Assign Role</label>
+              <select id="targetUserRoleSelect" class="custom-select">
+                <option value="user">Regular Candidate / User</option>
+                <option value="admin">Academic Quality Administrator</option>
+                <option value="super_admin">System Super Administrator</option>
+              </select>
+            </div>
+            <div class="form-row" style="margin-top:1.5rem;">
+              <button type="submit" class="btn btn-primary" id="btnSaveRole">
+                Update User Role
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comprehensive Privacy Policy Modal (Law No. 2010/012 of Republic of Cameroon) -->
+  <div class="modal-overlay hidden" id="privacyModal">
+    <div class="modal card privacy-modal">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">AcadFormat Privacy Policy & Legal Regulations</h3>
+          <p style="font-size:0.8rem;color:#64748b;">Governed by Cameroonian Law No. 2010/012 on Cybersecurity and Cybercrime</p>
+        </div>
+        <button class="modal-close" id="btnClosePrivacyModal">&times;</button>
+      </div>
+      <div class="modal-body legal-text-body">
+        <h4>1. Statutory Framework and Preamble</h4>
+        <p>
+          AcadFormat is the official academic document restructuring and identity compliance platform of the University of Bamenda (UBa), Cameroon. This Privacy Policy outlines the terms governing the collection, processing, and protection of user data and academic manuscripts under <strong>Law No. 2010/012 of 21 December 2010 on Cybersecurity and Cybercrime in Cameroon</strong> and <strong>Law No. 2010/013 on Electronic Communications</strong>.
+        </p>
+
+        <h4>2. Purpose of Document Processing</h4>
+        <p>
+          Uploaded documents (theses, dissertations, project reports, internship reports, and course assignments) are parsed solely for the technical execution of layout compliance: enforcing UBa 4.0 cm inside binding margins, Times New Roman 12pt typography, bilingual preliminary pages, and structured tables of contents. <strong>No manuscript content is sold, redistributed, or utilized to train external public language models.</strong>
+        </p>
+
+        <h4>3. Device Binding & Account Integrity</h4>
+        <p>
+          To maintain institutional security, prevent unauthorized account sharing, and ensure fair usage of the 72-hour free trial, accounts are bound to a persistent digital hardware identifier upon authentication. Accessing an account from an unregistered device triggers automatic verification and paywall re-authorization.
+        </p>
+
+        <h4>4. Mobile Money Transactions & Financial Confidentiality</h4>
+        <p>
+          Payments of 250 FCFA for 7-day export passes processed through MTN Mobile Money (MoMo) and Orange Money are conducted via encrypted telecom gateways. AcadFormat does not store banking PINs or confidential telecom security credentials.
+        </p>
+
+        <h4>5. Academic Intellectual Property</h4>
+        <p>
+          All intellectual property rights in manuscripts submitted to AcadFormat remain exclusively with the author and the University of Bamenda.
+        </p>
+
+        <h4>6. User Rights to Rectification and Erasure</h4>
+        <p>
+          In accordance with Article 34 of Law No. 2010/012, students and researchers hold the right to review, rectify, or request the purging of their uploaded files and account records from the AcadFormat data registry.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btnDismissPrivacy">I Understand & Accept</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Professional Institutional Footer -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <img src="/assets/uba_logo.png" alt="University of Bamenda Crest" class="footer-logo">
+        <div>
+          <span class="footer-title">AcadFormat • The University of Bamenda</span>
+          <p class="footer-sub">Republic of Cameroon • Peace – Work – Fatherland</p>
+        </div>
+      </div>
+      <div class="footer-links">
+        <a href="#" id="footerLinkPrivacy">Privacy Policy (Law No. 2010/012)</a>
+        <a href="#" id="footerLinkPricing">Pricing (250 FCFA / 7 Days)</a>
+        <a href="#" id="footerLinkAdmin">Admin Portal</a>
+      </div>
+      <div class="footer-copy">
+        &copy; 2026 University of Bamenda. All Rights Reserved.
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

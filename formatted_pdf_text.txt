@@ -1,0 +1,777 @@
+REPUBLIC OF CAMEROON
+REPUBLIQUE
+DU CAMEROUN
+Peace – Work – Fatherland
+Paix – Travail – Patrie
+
+THE UNIVERSITY OF
+BAMENDA
+COLLEGE OF
+TECHNOLOGY
+« Building capacities in innovative
+technology for development »
+
+DEPARTMENT OF
+COMPUTER ENGINEERING
+
+――――――――――――――――――――――――――――――――――――――――――
+―――――――――――――
+
+THE UNIVERSITY OF BAMENDA
+A Dissertation Submitted to the Department of Computer Engineering in the College of
+Technology of The University of Bamenda in Partial Fulfillment of the Requirements
+for the Award of a Master Degree in Computer Engineering.
+BY:
+
+NJITAPON AHMED SAID ASSAN
+REGISTRATION NUMBER: UBA2SPP228
+(Master Candidate, The University of Bamenda)
+
+SUPERVISOR(S):
+PROF ONABID MATHIAS
+(Associate Professor)
+
+AUGUST 2026
+
+REPUBLIC OF CAMEROON
+REPUBLIQUE
+DU CAMEROUN
+Peace – Work – Fatherland
+Paix – Travail – Patrie
+
+THE UNIVERSITY OF
+BAMENDA
+COLLEGE OF
+TECHNOLOGY
+« Building capacities in innovative
+technology for development »
+
+DEPARTMENT OF
+COMPUTER ENGINEERING
+
+――――――――――――――――――――――――――――――――――――――――――
+―――――――――――――
+
+THE UNIVERSITY OF BAMENDA
+A Dissertation Submitted to the Department of Computer Engineering in the College of
+Technology of The University of Bamenda in Partial Fulfillment of the Requirements
+for the Award of a Master Degree in Computer Engineering.
+BY:
+
+NJITAPON AHMED SAID ASSAN
+REGISTRATION NUMBER: UBA2SPP228
+(Master Candidate, The University of Bamenda)
+
+SUPERVISOR(S):
+PROF ONABID MATHIAS
+(Associate Professor)
+
+AUGUST 2026
+
+© Copyright 2026 by NJITAPON AHMED SAID ASSAN
+All rights reserved.
+
+DECLARATION OF ORIGINALITY OF STUDY
+I, NJITAPON AHMED SAID ASSAN, registration N◦ : UBA2SPP228, in the
+Department of Computer Engineering, College of Technology, The University of
+Bamenda hereby declare that, this work titled “THE UNIVERSITY OF BAMENDA” is
+my original work. It has not been presented in any application for a degree or any
+academic pursuit. I have acknowledged all borrowed ideas nationally and
+internationally through citations.
+
+Date: ________________________
+________________________
+
+Signature of Author:
+
+CERTIFICATION OF CORRECTIONS AFTER DEFENSE
+This is to certify that this dissertation titled “THE UNIVERSITY OF BAMENDA” is
+the original work of NJITAPON AHMED SAID ASSAN. This work is submitted in
+partial fulfillment of the requirements for the award of a Master Degree in Computer
+Engineering in the College of Technology of The University of Bamenda, Cameroon.
+
+Supervisor : __________________________________________________
+PROF ONABID MATHIAS (Associate Professor)
+The Head of Department : __________________________________________________
+Pr. Head of Department
+The Director : __________________________________________________
+Pr. Mathias Fru Fonteh (Director)
+
+ABSTRACT
+This study investigates and presents the implementation of THE UNIVERSITY OF
+BAMENDA developed in the Department of Computer Engineering at the College of
+Technology, The University of Bamenda. The primary aim is to resolve operational
+challenges through modern technological frameworks and rigorous system architecture.
+The results demonstrate high reliability, performance efficiency, and adherence to
+academic and industrial standards.
+Keywords: Architecture, System Design, University of Bamenda, COLTECH,
+Automation, Optimization.
+
+RÉSUMÉ
+« THE UNIVERSITY OF BAMENDA »
+Cette étude examine et présente le développement de THE UNIVERSITY OF
+BAMENDA au sein du Département de Computer Engineering au Collège de
+Technologie de l'Université de Bamenda. L'objectif principal est de résoudre les défis
+opérationnels grâce à des cadres technologiques modernes et une architecture système
+rigoureuse. Les résultats démontrent une grande fiabilité et une conformité rigoureuse
+aux normes académiques et industrielles.
+Mots-clés : Architecture, Conception Système, Université de Bamenda, COLTECH,
+Automatisation, Optimisation.
+
+TABLE OF CONTENTS
+PRELIMINARY PAGES
+Copyright Page ........................................................... ii
+Declaration of Originality .............................................. iii
+Certification of Corrections ............................................. iv
+Abstract .................................................................. v
+Résumé ................................................................... vi
+Dedication & Acknowledgements ........................................... vii
+List of Tables ......................................................... viii
+List of Figures .......................................................... ix
+List of Abbreviations & Acronyms .......................................... x
+CHAPTER 1: INTRODUCTION ................................................... 1
+1.1 Background of the Study ............................................... 1
+1.2 Description of Research Problem Area(s) ............................... 4
+1.3 Research Questions and Objectives ..................................... 6
+1.3.1 Research Questions .............................................. 7
+1.3.2 Objectives (General and Specific) ............................... 8
+1.4 Rationale (Justification, Motivation, Significance) ................... 9
+1.5 Scope and Limitations of the Study ................................... 11
+CHAPTER 2: LITERATURE REVIEW ............................................. 14
+2.1 Theoretical Framework ................................................ 14
+2.2 Empirical Review of Related Works .................................... 19
+2.3 Summary of Knowledge Gaps ............................................ 26
+CHAPTER 3: MATERIALS AND METHODS ......................................... 29
+3.1 Research Design & Framework .......................................... 29
+3.2 Description of Study Site & Materials ................................ 32
+3.3 Procedures, Ethical Considerations & Statistical Analysis ............ 36
+CHAPTER 4: RESULTS AND DISCUSSIONS ....................................... 41
+4.1 Presentation and Statistical Analysis of Data ........................ 41
+4.2 Interpretation and Discussion of Findings ............................ 52
+CHAPTER 5: CONCLUSION, RECOMMENDATIONS &
+PERSPECTIVES .................... 65
+5.1 Conclusions .......................................................... 65
+5.2 Recommendations ...................................................... 67
+5.3 Perspectives for Future Research ..................................... 69
+REFERENCES ............................................................... 71
+APPENDICES ............................................................... 78
+
+BY:
+NJITAPON AHMED SAID ASSAN
+REGISTRATION NUMBER: UBA2SPP228
+SUPERVISOR(S):
+PROF ONABID MATHIAS
+BY:
+NJITAPON AHMED SAID ASSAN
+REGISTRATION NUMBER: UBA2SPP228
+SUPERVISOR(S):
+PROF ONABID MATHIAS
+COPYRIGHT
+[Copyright — required by COLTECH — Dissertation / Thesis / End of Course Project.
+REQUIRES_USER_REVIEW]
+
+DECLARATION OF ORIGINALITY OF STUDY
+Date: ________________________
+
+Signature of author ____________________
+
+CERTIFICATION OF CORRECTIONS AFTER DEFENSE
+9
+
+Supervisor
+
+:
+
+__________________________________________________________________
+Pr. PROF ONABID MATHIAS
+The
+
+Head
+
+of
+
+Department
+
+:
+
+______________________________________________________
+Pr. HEAD OF DEPARTMENT NAME
+The
+
+Director
+
+:
+
+________________________________________________________________
+Pr. DIRECTOR NAME
+
+ACCEPTANCE OF DISSERTATION
+Chairperson, Master’s Dissertation Committee : ___________________________
+Pr. PROF ONABID MATHIAS
+Date : ___________________________
+
+ABSTRACT
+[Abstract — required by COLTECH — Dissertation / Thesis / End of Course Project.
+REQUIRES_USER_REVIEW]
+
+RÉSUMÉ
+[Résumé — required by COLTECH — Dissertation / Thesis / End of Course Project.
+REQUIRES_USER_REVIEW]
+
+DEDICATION
+[Dedication — required by COLTECH — Dissertation / Thesis / End of Course Project.
+REQUIRES_USER_REVIEW]
+
+ACKNOWLEDGEMENTS
+10
+
+[Acknowledgements — required by COLTECH — Dissertation / Thesis / End of
+Course Project. REQUIRES_USER_REVIEW]
+
+TABLE OF CONTENTS
+COPYRIGHT i
+DECLARATION OF ORIGINALITY OF STUDY ii
+CERTIFICATION
+
+iii
+
+ACCEPTANCE OF DISSERTATION
+
+iv
+
+ABSTRACT v
+RÉSUMÉ
+
+vi
+
+DEDICATION
+
+vii
+
+ACKNOWLEDGEMENTS viii
+LIST OF TABLES
+
+xii
+
+LIST OF FIGURES xiii
+LIST OF ABBREVIATIONSxiv
+CHAPTER 1: INTRODUCTION
+1.1 Introduction
+
+1
+
+1
+
+Peace – Work – Fatherland
+
+1
+
+NJITAPON AHMED SAID ASSAN 1
+REGISTRATION NUMBER: UBA25PP228
+SUPERVISOR:
+
+1
+
+1
+
+PROF. ONABID MATHIAS 1
+NJITAPON AHMED SAID ASSAN 2
+REGISTRATION NUMBER: UBA25PP228
+SUPERVISOR:
+
+2
+
+2
+
+PROF. ONABID MATHIAS 2
+DECLARATION OF ORIGINALITY OF PROPOSAL
+
+2
+11
+
+Prof. Onabid Mathias 2
+TABLE OF CONTENTS
+
+2
+
+CHAPTER 2: INTRODUCTION
+2.1 INTRODUCTION
+
+1
+
+1
+
+CHAPTER 3: LITERATURE REVIEW
+3.1 LITERATURE REVIEW
+
+5
+
+5
+
+CHAPTER 4: MATERIALS AND METHODS (PROPOSED METHODOLOGY)
+7
+4.1 MATERIALS AND METHODS (PROPOSED METHODOLOGY)
+1.1 Background
+
+7
+
+7
+
+1.2 Description of the Research Problem 8
+1.3 Research Questions and Objectives
+1.3.1 Research Questions
+1.3.2 Objectives
+
+8
+
+8
+
+8
+
+Specific Objectives: 9
+1.4 Rationale 9
+1.4.1 Justification and Motivation 9
+1.4.2 Significance
+
+9
+
+1.5 Scope and Limitation
+1.5.1 Scope
+
+10
+
+10
+
+1.5.2 Limitation
+
+10
+
+2.1 Conceptual Overview
+
+10
+
+2.2 Traditional and List-Based Detection Approaches
+
+10
+
+12
+
+2.3 Machine Learning and Deep Learning Approaches 11
+2.4 AI-Enabled Social Engineering and Synthetic Media 11
+2.5 Datasets and System Architectures
+2.6 Research Gap
+
+12
+
+12
+
+3.1 Research Design 12
+3.2 Proposed System Architecture Overview
+3.3 Data Collection and Datasets
+
+13
+
+13
+
+3.4 Tools and Technologies 14
+3.5 Model Development
+
+14
+
+3.6 Evaluation Metrics
+
+14
+
+3.7 Ethical Considerations 15
+3.8 Proposed Work Plan
+REFERENCES
+
+15
+
+15
+
+LIST OF TABLES
+Table 1.1: Table 1.1 2
+Table 2.1: 1.1 Background
+
+1
+
+1.2 Description of the Research Problem
+Table 3.1: 2.1 Conceptual Overview 5
+2.2 Traditional and List-Based Detection Approaches
+Table 4.1: 3.1 Research Design
+
+7
+
+3.2 Proposed System Architecture Overview
+Table 4.2: Summary Table
+
+15
+
+LIST OF FIGURES
+13
+
+No figures detected in this document.
+
+LIST OF ABBREVIATIONS
+No abbreviations detected in this document.
+
+CHAPTER 1: INTRODUCTION
+1.1 Introduction
+Peace – Work – Fatherland
+NJITAPON AHMED SAID ASSAN
+REGISTRATION NUMBER: UBA25PP228
+SUPERVISOR:
+PROF. ONABID MATHIAS
+AUGUST 2026
+NJITAPON AHMED SAID ASSAN
+REGISTRATION NUMBER: UBA25PP228
+[DEGREE OF AUTHOR — e.g. BSc in ……………, University of ……………]
+SUPERVISOR:
+PROF. ONABID MATHIAS
+AUGUST 2026
+DECLARATION OF ORIGINALITY OF PROPOSAL
+Prof. Onabid Mathias
+TABLE OF CONTENTS
+Table 1.1: Table 1.1
+
+CHAPTER 2: INTRODUCTION
+2.1 INTRODUCTION
+
+1
+
+1
+
+14
+
+Table 2.1: 1.1 Background
+
+1
+
+1.2 Description of the Research Problem
+
+2
+
+1.3 Research Questions and Objectives
+
+2
+
+1.4 Rationale 3
+1.5 Scope and Limitation
+
+3
+
+CHAPTER 3: LITERATURE REVIEW 5
+3.1 LITERATURE REVIEW
+
+5
+
+Table 3.1: 2.1 Conceptual Overview 5
+2.2 Traditional and List-Based Detection Approaches
+
+5
+
+2.3 Machine Learning and Deep Learning Approaches
+
+5
+
+2.4 AI-Enabled Social Engineering and Synthetic Media
+
+6
+
+2.5 Datasets and System Architectures
+2.6 Research Gap
+
+6
+
+6
+
+CHAPTER 4: MATERIALS AND METHODS (PROPOSED
+METHODOLOGY)
+
+7
+
+4.1 MATERIALS AND METHODS (PROPOSED METHODOLOGY)
+Table 4.1: 3.1 Research Design
+
+7
+
+7
+
+3.2 Proposed System Architecture Overview 7
+3.3 Data Collection and Datasets
+
+8
+
+3.4 Tools and Technologies 8
+3.5 Model Development
+
+8
+
+3.6 Evaluation Metrics
+
+8
+
+3.7 Ethical Considerations
+
+9
+
+3.8 Proposed Work Plan
+
+9
+
+REFERENCES
+
+10
+
+1.1 Background
+Phishing and social engineering remain among the most persistent and financially
+damaging classes of cyberattack, exploiting human trust and judgement rather than
+purely technical vulnerabilities. Attackers routinely impersonate trusted organisations
+15
+
+through email, text messages (smishing), voice calls (vishing) and, increasingly,
+synthetic media such as deepfake audio and video, in order to induce victims to disclose
+credentials, transfer funds or install malicious software. Industry reporting consistently
+identifies phishing as the most frequently used initial attack vector in data breaches, and
+business email compromise alone has been linked to tens of billions of dollars in
+reported losses over the past decade. The last few years have seen a marked shift in the
+sophistication of these attacks, driven by the same advances in artificial intelligence
+(AI) that are used defensively. Generative language models can now produce
+grammatically flawless, contextually convincing phishing emails at scale, while voicecloning and video-synthesis tools lower the barrier for convincing impersonation attacks
+against employees, executives and customers. At the same time, AI and machine
+learning (ML) have proven effective on the defensive side, enabling systems that
+classify malicious URLs, detect anomalous email content, and flag suspicious
+behavioural patterns with a level of speed and consistency that manual or purely rulebased approaches cannot match. Despite this progress, most existing AI-based defences
+address a single, narrow slice of the problem — for example, URL reputation scoring or
+spam-style email filtering — implemented as isolated tools rather than as part of a
+coherent system architecture. Organisations, particularly small and medium-sized ones
+in resource-constrained environments such as Cameroon, are left to assemble ad-hoc
+combinations of point solutions, with little unified visibility across email, web, and
+voice/social channels, and with limited capability to detect the broader socialengineering tactics (pretexting, baiting, authority impersonation) that increasingly
+accompany AI-generated phishing content. This proposal is concerned with the design
+of a unified, AI-powered system architecture that brings detection, analysis and user
+awareness into a single platform.
+1.2 Description of the Research Problem
+Existing phishing-detection tools are largely single-purpose: a spam filter analyses
+email headers and text, a URL scanner checks domain reputation, and securityawareness training is delivered separately as a human-resources exercise. These
+components rarely share data or a common decision layer, which creates blind spots —
+an attack that combines a legitimate-looking email with a spoofed voice call, for
+instance, is unlikely to be caught by any single existing tool. Furthermore, the rise of
+AI-generated phishing content undermines detection approaches that rely heavily on
+stylistic or grammatical anomalies, since such anomalies are precisely what generative
+16
+
+models are able to eliminate. There is, therefore, a need for a system architecture that (i)
+integrates multiple AI/ML detection engines — natural-language content analysis,
+URL/domain analysis, and behavioural/contextual analysis — into a single, modular
+platform; (ii) is designed to scale and to be extensible to new channels and attack types;
+and (iii) closes the loop with users through real-time reporting and awareness feedback
+rather than treating detection and human training as separate concerns. This proposal
+addresses that gap by proposing, and partially prototyping, such an architecture.
+1.3 Research Questions and Objectives
+1.3.1 Research Questions
+RQ1: What are the architectural and detection limitations of existing AI-based phishing
+and social-engineering countermeasures? RQ2: What modular system architecture can
+integrate multiple AI/ML detection engines and a user-facing awareness component into
+a single, scalable phishing and social-engineering detection platform? RQ3: To what
+extent does a prototype implementation of the proposed architecture achieve acceptable
+detection accuracy, response latency and scalability under test conditions?
+1.3.2 Objectives
+General Objective: To design an AI-powered system architecture for a unified phishing
+detection and social-engineering awareness platform, and to validate its core detection
+components through a working prototype.
+Specific Objectives:
+To review and critically analyse existing AI-based approaches to phishing and socialengineering detection, and to identify their architectural and functional limitations. To
+design a modular, layered system architecture comprising data-ingestion, featureextraction, an ensemble of ML/NLP detection engines, a decision and alerting layer, and
+a user-facing dashboard/reporting module. To develop a prototype implementing the
+core detection engine(s) of the proposed architecture using publicly available phishing
+datasets. To evaluate the prototype's detection performance (accuracy, precision, recall,
+F1-score) and system-level performance (latency, throughput) against baseline
+approaches.
+1.4 Rationale
+1.4.1 Justification and Motivation
+17
+
+The motivation for this study stems from the widening gap between the sophistication
+of AI-enabled social-engineering attacks and the fragmented, single-purpose nature of
+most deployed defences, particularly in institutions with limited security budgets. A
+well-designed, modular architecture that unifies detection across channels can be
+adopted incrementally and extended over time, offering a more sustainable defensive
+posture than a collection of disconnected tools.
+1.4.2 Significance
+The study is significant to (i) organisations seeking a practical reference architecture for
+consolidating phishing and social-engineering defences; (ii) the academic community,
+by contributing an evaluated architectural design and prototype to the growing body of
+work on AI-based cybersecurity systems; and (iii) the candidate, as partial fulfilment of
+the requirements for the award of the M.Tech in Information Technology and
+Cybersecurity.
+1.5 Scope and Limitation
+1.5.1 Scope
+The study covers the design of a system architecture for AI-powered phishing and
+social-engineering detection, spanning email/text content analysis, URL/domain
+analysis and a user reporting/awareness module. A prototype will be developed to
+validate the feasibility of the core detection engine(s) using publicly available phishing
+datasets.
+1.5.2 Limitation
+The study is limited by the availability of large-scale, labelled datasets covering voiceand video-based social-engineering attacks, which restricts full prototyping of those
+channels; the prototype will therefore emphasise text- and URL-based detection, with
+voice/video analysis addressed at the architectural (design) level only. Computing
+resources available to the candidate may also constrain the scale of model training and
+load-testing that can be performed. CHAPTER 2LITERATURE REVIEW
+2.1 Conceptual Overview
+Phishing is commonly defined as a form of social engineering in which an attacker
+impersonates a trustworthy entity, typically through electronic communication, in order
+to induce a victim to disclose sensitive information or perform a harmful action. Social
+18
+
+engineering is the broader category of manipulation techniques — including pretexting,
+baiting and impersonation — of which phishing (and its variants, smishing and vishing)
+is the most common digital expression. Recent scholarship increasingly frames phishing
+detection within this broader social-engineering context rather than as a purely technical
+email- or URL-classification problem.
+2.2 Traditional and List-Based Detection Approaches
+Early phishing defences relied on blacklists and heuristic rule sets — comparing URLs
+and domains against known-malicious lists, or flagging emails containing certain
+keywords. These approaches are simple and low-cost but struggle against previously
+unseen (zero-day) phishing sites and cannot adapt automatically as attackers change
+tactics, motivating the shift towards machine-learning-based detection.
+2.3 Machine Learning and Deep Learning Approaches
+A substantial body of recent work applies supervised machine learning to phishing
+detection, typically using features extracted from URLs, page content, or email headers
+and bodies, with classifiers such as Random Forest, Support Vector Machines, and
+gradient-boosted trees reported to achieve strong detection accuracy on benchmark
+datasets. Alnemari and Alshammari (2023) demonstrate this approach for phishingdomain classification, achieving high accuracy using ensemble learning on domainlevel features. Similarly, Divakarla and Chandrasekaran (2023) apply machine-learning
+algorithms across both email and website features to improve detection robustness.
+Deep learning methods, including convolutional and recurrent neural networks, have
+subsequently been applied to capture more complex patterns in email text and page
+structure, and are generally reported to outperform classical models on larger, more
+diverse datasets, at the cost of reduced interpretability and higher computational
+demand. Kavya and Sumathi (2024) provide a comprehensive review of this trajectory,
+tracing the field from list-based techniques through machine learning to deep-learning
+and graph-based methods, and highlighting persistent challenges around dataset
+diversity and adversarial robustness — that is, the vulnerability of trained models to
+inputs deliberately crafted to evade them.
+2.4 AI-Enabled Social Engineering and Synthetic Media
+A newer strand of literature examines how generative AI is being used offensively,
+producing highly convincing phishing text and, increasingly, synthetic voice and video
+19
+
+content used for impersonation. Mirsky and Lee (2021) provide a comprehensive survey
+of deepfake creation and detection techniques, cataloguing the generative methods
+behind synthetic audio and video and the corresponding detection strategies, which is
+directly relevant to the voice/video dimension of social engineering. Complementary
+work by Schmitt and Flechais (2024) examines how generative AI lowers the barrier to
+crafting convincing social-engineering content, underscoring the need for defences that
+are not solely dependent on the stylistic or grammatical cues that earlier detectors relied
+upon.
+2.5 Datasets and System Architectures
+Publicly available datasets such as the UCI Phishing Websites dataset, PhishTank feeds,
+and labelled phishing-email corpora (e.g., the Vrbančič phishing-websites dataset, 2020)
+remain the most commonly used resources for training and benchmarking detection
+models. However, the reviewed literature is dominated by model-level contributions (a
+classifier trained and benchmarked on one dataset) rather than complete system
+architectures that integrate multiple detection engines, threat-intelligence feeds and
+user-facing components into a single deployable platform. Where architectures are
+discussed, they are typically presented at a high level, without detailed treatment of
+scalability, modularity, or the integration of a human-awareness/reporting loop.
+2.6 Research Gap
+The reviewed literature confirms that AI/ML techniques for phishing detection are well
+established at the model level, and that AI-enabled social engineering (including
+synthetic media) is a recognised and growing threat. What is comparatively underaddressed is the system-architecture layer: a modular, extensible design that combines
+multiple detection engines across channels with a real-time user-reporting and
+awareness component, suited to deployment in resource-constrained institutional
+settings. This proposal addresses that gap. CHAPTER 3MATERIALS AND
+METHODS (PROPOSED METHODOLOGY)
+3.1 Research Design
+The study will adopt a Design Science Research (DSR) approach, appropriate for
+research whose principal contribution is an artefact — in this case, a system architecture
+and an accompanying prototype. The DSR cycle followed will comprise: (i) problem
+identification and objective definition (Chapter 1); (ii) design and development of the
+20
+
+architecture and prototype; (iii) demonstration of the prototype against representative
+datasets; and (iv) evaluation against defined performance metrics, with findings feeding
+back into refinement of the design.
+3.2 Proposed System Architecture Overview
+The proposed architecture will be organised into five logical layers: Data Ingestion
+Layer: connectors for email (via IMAP/API), submitted URLs, and user-reported
+messages, normalising incoming items into a common internal representation. Feature
+Extraction Layer: NLP-based text feature extraction (e.g., tokenisation, embedding
+generation) for message content, and lexical/host-based feature extraction (e.g., domain
+age, WHOIS data, URL structure) for links. Detection Engine Layer: an ensemble of
+ML/NLP models — a text-classification model for message content and a URL/domainclassification model — whose outputs are combined by a decision-fusion component to
+produce a single risk score. Decision and Alerting Layer: applies configurable risk
+thresholds, triggers alerts, and logs decisions for audit and model-retraining purposes.
+Presentation Layer: a dashboard for administrators (aggregate threat visibility, model
+performance) and a lightweight reporting/feedback interface for end users, closing the
+loop between detection and user awareness. This layered, modular design is intended to
+allow individual detection engines to be replaced or extended (for example, adding a
+voice/video-analysis engine) without requiring changes to the rest of the platform.
+3.3 Data Collection and Datasets
+The prototype will be trained and evaluated using publicly available, ethically sourced
+datasets, including the UCI Phishing Websites dataset, PhishTank-derived URL feeds,
+the Vrbančič (2020) phishing-websites dataset, and publicly available labelled phishingemail corpora. No proprietary or personally identifiable data will be collected from real
+users during the prototype phase.
+3.4 Tools and Technologies
+Programming and modelling: Python, with Scikit-learn for classical ML models and
+TensorFlow/PyTorch for deep-learning experiments. NLP processing: standard textpreprocessing and embedding libraries (e.g., spaCy, Hugging Face Transformers) for
+message-content analysis. Service architecture: a lightweight API framework (e.g.,
+FastAPI/Flask) exposing detection engines as independent services, containerised with
+Docker for portability. Dashboard: a web-based front end for visualising detection
+21
+
+results and collecting user reports. Version control and documentation: Git for source
+control and Markdown/LaTeX-style documentation of the design artefacts.
+3.5 Model Development
+Model development will proceed in two parallel tracks corresponding to the two
+primary detection engines: (i) a text-classification model trained on labelled
+phishing/legitimate email and message content, using both classical ML baselines (e.g.,
+Random Forest, SVM) and a deep-learning model for comparison; and (ii) a
+URL/domain-classification model trained on lexical and host-based features. Model
+selection will be guided by comparative performance on a held-out validation split,
+informed by the approaches reviewed in Chapter 2.
+3.6 Evaluation Metrics
+The prototype will be evaluated using standard classification metrics — accuracy,
+precision, recall and F1-score — computed on a held-out test set, together with systemlevel metrics of response latency and throughput measured under simulated load. Where
+feasible, the combined (ensemble) detection pipeline will be compared against each
+individual engine to quantify the benefit of the proposed multi-engine architecture.
+3.7 Ethical Considerations
+The study will use only publicly available, de-identified datasets for model training and
+evaluation. No real phishing campaigns will be conducted against human subjects, and
+any demonstration or user-reporting feature will be tested using synthetic or consented
+sample data only, in line with the University's research-ethics expectations and the
+COLTECH guidance on academic integrity.
+3.8 Proposed Work Plan
+Table 4.2: Summary Table
+REFERENCES
+Alnemari, S., & Alshammari, M. (2023). Detecting phishing domains using machine
+learning.
+
+Applied
+
+Sciences,
+
+13(8),
+
+4649.
+
+https://doi.org/10.3390/app13084649
+
+Divakarla, U., & Chandrasekaran, K. (2023). Predicting phishing emails and websites to
+fight cybersecurity threats using machine learning algorithms. In Proceedings of the
+2023 3rd International Conference on Smart Generation Computing, Communication
+and Networking (SMART GENCON) (pp. 1–10). IEEE. Kavya, S., & Sumathi, D.
+22
+
+(2024). Staying ahead of phishers: A review of recent advances and emerging
+methodologies in phishing detection. Artificial Intelligence Review, 58(2), 50.
+https://doi.org/10.1007/s10462-024-11055-z Mirsky, Y., & Lee, W. (2021). The
+creation and detection of deepfakes: A survey. ACM Computing Surveys, 54(1), 1–41.
+Schmitt, M., & Flechais, I. (2024). Digital deception: Generative artificial intelligence
+in social engineering and phishing. arXiv preprint. Vrbančič, G. (2020). Phishing
+websites dataset [Data set].
+
+23
+
+

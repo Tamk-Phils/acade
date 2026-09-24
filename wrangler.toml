@@ -1,0 +1,10 @@
+name = "acadformat"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# Cloudflare D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "acadformat-db"
+database_id = "1ce80e78-f367-494d-aa47-5c87a8e02613"
+
