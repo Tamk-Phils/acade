@@ -36,13 +36,25 @@ from backend.database import (
 )
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+# Serverless environments (Vercel, AWS Lambda) have a read-only filesystem outside /tmp
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or not os.access(BASE_DIR, os.W_OK):
+    STORAGE_DIR = "/tmp/acadformat_storage"
+else:
+    STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+
 REACT_DIST_DIR = os.path.join(BASE_DIR, "frontend-react", "dist")
 FRONTEND_DIR = REACT_DIST_DIR if os.path.isdir(REACT_DIST_DIR) else os.path.join(BASE_DIR, "frontend")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
-os.makedirs(STORAGE_DIR, exist_ok=True)
-os.makedirs(FRONTEND_DIR, exist_ok=True)
+try:
+    os.makedirs(STORAGE_DIR, exist_ok=True)
+except Exception:
+    pass
+
+try:
+    os.makedirs(FRONTEND_DIR, exist_ok=True)
+except Exception:
+    pass
 
 app = FastAPI(
     title="AcadFormat — University of Bamenda Academic Identity & Formatting Platform",
@@ -473,14 +485,18 @@ async def reformat_endpoint(
         # 1. Restructure to standard DOCX
         restructure_document(parsed, req, out_docx_path)
 
-        # 2. Convert to PDF via headless LibreOffice
-        out_pdf_path = convert_docx_to_pdf(out_docx_path, session_dir)
-
-        # 3. Generate high-resolution page previews
-        preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=120)
+        # 2. Convert to PDF via headless LibreOffice (if installed on system)
+        out_pdf_path = None
+        preview_pages = []
+        try:
+            out_pdf_path = convert_docx_to_pdf(out_docx_path, session_dir)
+            preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=120)
+        except Exception as conv_err:
+            print(f"[AcadFormat] Notice: PDF/Preview generation skipped: {conv_err}")
 
         session["formatted_docx"] = out_docx_path
-        session["formatted_pdf"] = out_pdf_path
+        if out_pdf_path and os.path.exists(out_pdf_path):
+            session["formatted_pdf"] = out_pdf_path
         session["preview_pages"] = preview_pages
         session["doc_type"] = doc_type
         session["school_type"] = school_type
@@ -498,7 +514,8 @@ async def reformat_endpoint(
             "preview_urls": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
             "preview_pages": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
             "download_docx": f"/api/download/{token}/docx",
-            "download_pdf": f"/api/download/{token}/pdf"
+            "download_pdf": f"/api/download/{token}/pdf" if out_pdf_path else None,
+            "pdf_available": bool(out_pdf_path)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reformatting failed: {str(e)}")
@@ -586,7 +603,10 @@ async def download_file(
     elif fmt == "pdf":
         path = session.get("formatted_pdf")
         if not path or not os.path.exists(path):
-            raise HTTPException(status_code=404, detail="PDF file not generated.")
+            raise HTTPException(
+                status_code=404,
+                detail="PDF export requires LibreOffice on the server. Please download the DOCX format, or deploy the backend with Docker/LibreOffice."
+            )
         return FileResponse(path, filename=f"{prefix}_Official.pdf", media_type="application/pdf")
     else:
         raise HTTPException(status_code=400, detail="Unsupported format. Use 'docx' or 'pdf'.")

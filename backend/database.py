@@ -17,7 +17,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+# Serverless environments (Vercel, AWS Lambda) have a read-only filesystem outside /tmp
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or not os.access(BASE_DIR, os.W_OK):
+    STORAGE_DIR = "/tmp/acadformat_storage"
+else:
+    STORAGE_DIR = os.path.join(BASE_DIR, "storage")
 LOCAL_DB_PATH = os.path.join(STORAGE_DIR, "acadformat.db")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
@@ -124,8 +128,12 @@ def verify_password(password: str, stored_hash: str) -> bool:
 # ---------------------------------------------------------
 def init_local_db():
     """Initializes local SQLite database with all required tables and default seeds."""
-    os.makedirs(STORAGE_DIR, exist_ok=True)
-    conn = sqlite3.connect(LOCAL_DB_PATH)
+    try:
+        os.makedirs(STORAGE_DIR, exist_ok=True)
+        conn = sqlite3.connect(LOCAL_DB_PATH)
+    except Exception as e:
+        print(f"[AcadFormat] SQLite storage init warning: {e}")
+        return
     cursor = conn.cursor()
 
     # 1. Documents & Reformats

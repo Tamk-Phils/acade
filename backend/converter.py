@@ -8,8 +8,20 @@ import subprocess
 import glob
 from typing import List, Dict, Any
 
+def is_libreoffice_available() -> bool:
+    """Returns True if libreoffice or soffice is installed and executable."""
+    return bool(shutil.which("libreoffice") or shutil.which("soffice"))
+
+def is_pdftoppm_available() -> bool:
+    """Returns True if pdftoppm is installed and executable."""
+    return bool(shutil.which("pdftoppm"))
+
 def convert_docx_to_pdf(docx_path: str, output_dir: str) -> str:
     """Converts a DOCX file to PDF using headless LibreOffice."""
+    lo_bin = shutil.which("libreoffice") or shutil.which("soffice")
+    if not lo_bin:
+        raise RuntimeError("LibreOffice binary not found in system PATH. Install libreoffice or deploy with Docker to enable PDF conversion.")
+
     abs_out_dir = os.path.abspath(output_dir)
     os.makedirs(abs_out_dir, exist_ok=True)
     lo_profile_dir = os.path.join(abs_out_dir, "lo_profile")
@@ -24,7 +36,7 @@ def convert_docx_to_pdf(docx_path: str, output_dir: str) -> str:
             pass
 
     cmd = [
-        "libreoffice",
+        lo_bin,
         f"-env:UserInstallation=file://{lo_profile_dir}",
         "--headless",
         "--convert-to",
@@ -49,6 +61,10 @@ def convert_docx_to_pdf(docx_path: str, output_dir: str) -> str:
 
 def generate_page_previews(pdf_path: str, preview_dir: str, dpi: int = 120) -> List[str]:
     """Generates PNG images for each page of the PDF using pdftoppm, purging stale pages first."""
+    ppm_bin = shutil.which("pdftoppm")
+    if not ppm_bin:
+        raise RuntimeError("pdftoppm binary not found in system PATH. Install poppler-utils to enable page previews.")
+
     # Purge existing preview directory completely to avoid stale pages joining
     if os.path.exists(preview_dir):
         shutil.rmtree(preview_dir, ignore_errors=True)
@@ -56,7 +72,7 @@ def generate_page_previews(pdf_path: str, preview_dir: str, dpi: int = 120) -> L
 
     prefix = os.path.join(preview_dir, "page")
     cmd = [
-        "pdftoppm",
+        ppm_bin,
         "-png",
         "-r", str(dpi),
         pdf_path,
