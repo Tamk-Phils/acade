@@ -97,6 +97,12 @@ app.add_middleware(
 async def api_path_prefix_middleware(request, call_next):
     """Normalizes request path so routes work with or without /api/ prefix in serverless environments."""
     path = request.scope.get("path", "")
+    if path.startswith("/api/index.py"):
+        path = path.replace("/api/index.py", "/api", 1)
+        if path == "/api":
+            path = "/api/health"
+        request.scope["path"] = path
+
     if path and not path.startswith("/api/") and path != "/api":
         target = f"/api{path}"
         for route in app.routes:
@@ -105,6 +111,7 @@ async def api_path_prefix_middleware(request, call_next):
                 request.scope["path"] = target
                 break
     return await call_next(request)
+
 
 SESSIONS = {}
 
@@ -836,6 +843,8 @@ async def get_privacy_policy():
     }
 
 
+@app.get("/api")
+@app.get("/api/")
 @app.get("/api/health")
 async def health_check():
     """Returns platform health and multi-engine database status (Cloudflare D1, Supabase, Local SQLite)."""
@@ -845,6 +854,7 @@ async def health_check():
         "version": "2.3.0",
         "database": get_database_status()
     }
+
 
 
 @app.get("/api/history")
