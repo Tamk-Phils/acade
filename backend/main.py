@@ -70,6 +70,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def api_path_prefix_middleware(request, call_next):
+    """Normalizes request path so routes work with or without /api/ prefix in serverless environments."""
+    path = request.scope.get("path", "")
+    if path and not path.startswith("/api/") and path != "/api":
+        target = f"/api{path}"
+        for route in app.routes:
+            route_path = getattr(route, "path", None)
+            if route_path and (route_path == target or route_path == f"{target}/" or target == f"{route_path}/"):
+                request.scope["path"] = target
+                break
+    return await call_next(request)
+
 SESSIONS = {}
 
 def get_or_restore_session(token: str):
@@ -834,5 +847,9 @@ async def serve_assets(file_path: str):
         return FileResponse(proj_asset)
     raise HTTPException(status_code=404, detail="Asset not found")
 
-# Mount frontend UI root
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+# Mount frontend UI root only when running locally as standalone server and directory exists
+if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") and os.path.isdir(FRONTEND_DIR):
+    try:
+        app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    except Exception as mount_err:
+        print(f"[AcadFormat] Static frontend mount skipped: {mount_err}")

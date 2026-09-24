@@ -3,7 +3,11 @@
   "framework": "vite",
   "buildCommand": "npm run build --prefix frontend-react",
   "outputDirectory": "frontend-react/dist",
-  "installCommand": "npm install --prefix frontend-react",
+  "functions": {
+    "api/*.py": {
+      "includeFiles": "backend/**,assets/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
