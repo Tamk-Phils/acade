@@ -892,6 +892,13 @@ async def global_exception_logging_middleware(request, call_next):
             "status": "error",
             "error": "internal_server_error",
             "message": str(exc),
-            "traceback": tb.split("\n"),
             "path": request.url.path
         })
+
+# Mount frontend UI root only when running locally as standalone server and directory exists
+if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") and os.path.isdir(FRONTEND_DIR):
+    try:
+        app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    except Exception as mount_err:
+        print(f"[AcadFormat] Static frontend mount skipped: {mount_err}")
+

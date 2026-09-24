@@ -144,6 +144,11 @@ def init_local_db():
     try:
         os.makedirs(STORAGE_DIR, exist_ok=True)
         conn = sqlite3.connect(LOCAL_DB_PATH)
+    except Exception as e:
+        print(f"[AcadFormat] SQLite storage init warning: {e}")
+        return
+
+    try:
         cursor = conn.cursor()
 
         # 1. Documents & Reformats
@@ -263,9 +268,13 @@ def init_local_db():
             """, ("UBa Academic Identity Admin", "admin", "admin@acadformat.uba.cm", admin_pw, far_future, far_future, now_iso))
 
         conn.commit()
-        conn.close()
     except Exception as e:
         print(f"[AcadFormat] Database initialization notice: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 # Initialize DB on module load safely
 try:
