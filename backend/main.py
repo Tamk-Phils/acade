@@ -59,7 +59,8 @@ except Exception:
 app = FastAPI(
     title="AcadFormat — University of Bamenda Academic Identity & Formatting Platform",
     description="Automated audit, restructuring, authentication, and compliance conforming to official UBa Senate standards.",
-    version="2.3.0"
+    version="2.3.0",
+    redirect_slashes=False
 )
 
 app.add_middleware(
