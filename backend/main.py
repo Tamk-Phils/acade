@@ -870,9 +870,28 @@ async def serve_assets(file_path: str):
         return FileResponse(proj_asset)
     raise HTTPException(status_code=404, detail="Asset not found")
 
-# Mount frontend UI root only when running locally as standalone server and directory exists
-if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") and os.path.isdir(FRONTEND_DIR):
+# Root route fallback for health status
+@app.get("/")
+async def root_index():
+    return {
+        "status": "online",
+        "app": "AcadFormat Academic Identity API",
+        "version": "2.3.0"
+    }
+
+# Top-level error catching middleware to prevent opaque 500 FUNCTION_INVOCATION_FAILED errors
+@app.middleware("http")
+async def global_exception_logging_middleware(request, call_next):
     try:
-        app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
-    except Exception as mount_err:
-        print(f"[AcadFormat] Static frontend mount skipped: {mount_err}")
+        return await call_next(request)
+    except Exception as exc:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[AcadFormat Unhandled Error] {exc}\n{tb}", file=sys.stderr)
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "error": "internal_server_error",
+            "message": str(exc),
+            "traceback": tb.split("\n"),
+            "path": request.url.path
+        })

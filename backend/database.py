@@ -144,132 +144,134 @@ def init_local_db():
     try:
         os.makedirs(STORAGE_DIR, exist_ok=True)
         conn = sqlite3.connect(LOCAL_DB_PATH)
+        cursor = conn.cursor()
+
+        # 1. Documents & Reformats
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acadformat_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT UNIQUE NOT NULL,
+            filename TEXT NOT NULL,
+            doc_type TEXT NOT NULL,
+            school_type TEXT NOT NULL,
+            compliance_score INTEGER DEFAULT 0,
+            title TEXT,
+            author TEXT,
+            reg_number TEXT,
+            department TEXT,
+            page_count INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'audited',
+            metadata_json TEXT,
+            created_at TEXT NOT NULL
+        )
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acadformat_reformats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT UNIQUE NOT NULL,
+            docx_path TEXT,
+            pdf_path TEXT,
+            page_count INTEGER DEFAULT 1,
+            reformatted_at TEXT NOT NULL,
+            FOREIGN KEY (token) REFERENCES acadformat_documents(token)
+        )
+        """)
+
+        # 2. Users & RBAC
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acadformat_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            registered_device_id TEXT,
+            trial_expires_at TEXT NOT NULL,
+            paid_until TEXT,
+            created_at TEXT NOT NULL
+        )
+        """)
+
+        # 3. User Sessions
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acadformat_sessions (
+            session_token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            device_id TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES acadformat_users(id)
+        )
+        """)
+
+        # 4. Mobile Money Payments
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acadformat_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            amount INTEGER NOT NULL DEFAULT 250,
+            currency TEXT DEFAULT 'XAF',
+            operator TEXT NOT NULL,
+            phone_number TEXT NOT NULL,
+            transaction_ref TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'completed',
+            paid_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES acadformat_users(id)
+        )
+        """)
+
+        # 5. System Configuration
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS acadformat_system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """)
+
+        # Insert default config values if missing
+        default_configs = {
+            "trial_duration_hours": "72",
+            "subscription_price_xaf": "250",
+            "subscription_duration_days": "7"
+        }
+        for k, v in default_configs.items():
+            cursor.execute("INSERT OR IGNORE INTO acadformat_system_config (key, value) VALUES (?, ?)", (k, v))
+
+        # Seed Default Super Admin and Admin if not present
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        far_future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3650)).isoformat()
+
+        # Super Admin
+        cursor.execute("SELECT id FROM acadformat_users WHERE username = 'superadmin' OR email = 'superadmin@acadformat.uba.cm'")
+        if not cursor.fetchone():
+            sadmin_pw = hash_password("SuperAdmin@2026")
+            cursor.execute("""
+            INSERT INTO acadformat_users (full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at)
+            VALUES (?, ?, ?, ?, 'super_admin', 'master_device', ?, ?, ?)
+            """, ("System Super Administrator", "superadmin", "superadmin@acadformat.uba.cm", sadmin_pw, far_future, far_future, now_iso))
+
+        # Admin
+        cursor.execute("SELECT id FROM acadformat_users WHERE username = 'admin' OR email = 'admin@acadformat.uba.cm'")
+        if not cursor.fetchone():
+            admin_pw = hash_password("Admin@2026")
+            cursor.execute("""
+            INSERT INTO acadformat_users (full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at)
+            VALUES (?, ?, ?, ?, 'admin', 'admin_device', ?, ?, ?)
+            """, ("UBa Academic Identity Admin", "admin", "admin@acadformat.uba.cm", admin_pw, far_future, far_future, now_iso))
+
+        conn.commit()
+        conn.close()
     except Exception as e:
-        print(f"[AcadFormat] SQLite storage init warning: {e}")
-        return
-    cursor = conn.cursor()
+        print(f"[AcadFormat] Database initialization notice: {e}")
 
-    # 1. Documents & Reformats
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS acadformat_documents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        token TEXT UNIQUE NOT NULL,
-        filename TEXT NOT NULL,
-        doc_type TEXT NOT NULL,
-        school_type TEXT NOT NULL,
-        compliance_score INTEGER DEFAULT 0,
-        title TEXT,
-        author TEXT,
-        reg_number TEXT,
-        department TEXT,
-        page_count INTEGER DEFAULT 1,
-        status TEXT DEFAULT 'audited',
-        metadata_json TEXT,
-        created_at TEXT NOT NULL
-    )
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS acadformat_reformats (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        token TEXT UNIQUE NOT NULL,
-        docx_path TEXT,
-        pdf_path TEXT,
-        page_count INTEGER DEFAULT 1,
-        reformatted_at TEXT NOT NULL,
-        FOREIGN KEY (token) REFERENCES acadformat_documents(token)
-    )
-    """)
-
-    # 2. Users & RBAC
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS acadformat_users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        full_name TEXT NOT NULL,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        role TEXT DEFAULT 'user',
-        registered_device_id TEXT,
-        trial_expires_at TEXT NOT NULL,
-        paid_until TEXT,
-        created_at TEXT NOT NULL
-    )
-    """)
-
-    # 3. User Sessions
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS acadformat_sessions (
-        session_token TEXT PRIMARY KEY,
-        user_id INTEGER NOT NULL,
-        device_id TEXT,
-        created_at TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES acadformat_users(id)
-    )
-    """)
-
-    # 4. Mobile Money Payments
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS acadformat_payments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        username TEXT NOT NULL,
-        amount INTEGER NOT NULL DEFAULT 250,
-        currency TEXT DEFAULT 'XAF',
-        operator TEXT NOT NULL,
-        phone_number TEXT NOT NULL,
-        transaction_ref TEXT UNIQUE NOT NULL,
-        status TEXT DEFAULT 'completed',
-        paid_at TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES acadformat_users(id)
-    )
-    """)
-
-    # 5. System Configuration
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS acadformat_system_config (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    )
-    """)
-
-    # Insert default config values if missing
-    default_configs = {
-        "trial_duration_hours": "72",
-        "subscription_price_xaf": "250",
-        "subscription_duration_days": "7"
-    }
-    for k, v in default_configs.items():
-        cursor.execute("INSERT OR IGNORE INTO acadformat_system_config (key, value) VALUES (?, ?)", (k, v))
-
-    # Seed Default Super Admin and Admin if not present
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    far_future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3650)).isoformat()
-
-    # Super Admin
-    cursor.execute("SELECT id FROM acadformat_users WHERE username = 'superadmin' OR email = 'superadmin@acadformat.uba.cm'")
-    if not cursor.fetchone():
-        sadmin_pw = hash_password("SuperAdmin@2026")
-        cursor.execute("""
-        INSERT INTO acadformat_users (full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at)
-        VALUES (?, ?, ?, ?, 'super_admin', 'master_device', ?, ?, ?)
-        """, ("System Super Administrator", "superadmin", "superadmin@acadformat.uba.cm", sadmin_pw, far_future, far_future, now_iso))
-
-    # Admin
-    cursor.execute("SELECT id FROM acadformat_users WHERE username = 'admin' OR email = 'admin@acadformat.uba.cm'")
-    if not cursor.fetchone():
-        admin_pw = hash_password("Admin@2026")
-        cursor.execute("""
-        INSERT INTO acadformat_users (full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at)
-        VALUES (?, ?, ?, ?, 'admin', 'admin_device', ?, ?, ?)
-        """, ("UBa Academic Identity Admin", "admin", "admin@acadformat.uba.cm", admin_pw, far_future, far_future, now_iso))
-
-    conn.commit()
-    conn.close()
-
-# Initialize DB on module load
-init_local_db()
+# Initialize DB on module load safely
+try:
+    init_local_db()
+except Exception as e:
+    print(f"[AcadFormat] Startup init notice: {e}")
 
 # ---------------------------------------------------------
 # User Authentication & Management
