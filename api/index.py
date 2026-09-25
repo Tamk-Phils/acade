@@ -47,8 +47,9 @@ try:
             "url_path": request.url.path,
             "scope_path": request.scope.get("path"),
             "scope_root_path": request.scope.get("root_path"),
-            "routes": [getattr(r, "path", str(r)) for r in app.routes if getattr(r, "path", None)]
+            "headers": dict(request.headers)
         }
+
 except Exception as e:
     _err_msg = str(e)
     _err_trace = traceback.format_exc()
