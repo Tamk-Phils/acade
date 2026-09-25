@@ -78,7 +78,9 @@ export async function reformatDocument(
   docType: string,
   schoolType: string,
   headerMode: string,
-  metadata: DocumentMetadata
+  metadata: DocumentMetadata,
+  file?: File | null,
+  sampleType?: string | null
 ): Promise<{ status: string; token: string; preview_pages?: string[]; preview_urls?: string[]; audit: AuditResult }> {
   const formData = new FormData();
   formData.append('token', token);
@@ -86,6 +88,12 @@ export async function reformatDocument(
   formData.append('school_type', schoolType);
   formData.append('header_mode', headerMode);
   formData.append('metadata_json', JSON.stringify(metadata));
+  if (file) {
+    formData.append('file', file);
+  }
+  if (sampleType) {
+    formData.append('sample_type', sampleType);
+  }
 
   const res = await fetch(`${API_BASE}/reformat`, {
     method: 'POST',
@@ -96,6 +104,36 @@ export async function reformatDocument(
     throw new Error(err.detail || 'Reformatting process encountered an error');
   }
   return res.json();
+}
+
+export async function downloadDirectDocument(
+  docType: string,
+  schoolType: string,
+  headerMode: string,
+  metadata: DocumentMetadata,
+  file?: File | null,
+  sampleType?: string | null,
+  fmt: 'docx' | 'pdf' = 'docx'
+): Promise<Response> {
+  const formData = new FormData();
+  formData.append('doc_type', docType);
+  formData.append('school_type', schoolType);
+  formData.append('header_mode', headerMode);
+  formData.append('metadata_json', JSON.stringify(metadata));
+  formData.append('fmt', fmt);
+  if (file) formData.append('file', file);
+  if (sampleType) formData.append('sample_type', sampleType);
+
+  const token = getAuthToken();
+  const devId = getDeviceFingerprint();
+  if (token) formData.append('session_token', token);
+  if (devId) formData.append('device_id', devId);
+
+  return fetch(`${API_BASE}/download-direct`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: formData
+  });
 }
 
 export async function sendChatMessage(

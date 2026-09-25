@@ -17,6 +17,7 @@ import {
   uploadDocument,
   loadSample,
   reformatDocument,
+  downloadDirectDocument,
   checkAuthMe,
   logoutUser
 } from './services/api';
@@ -63,6 +64,8 @@ export const App: React.FC = () => {
 
   const [currentDocToken, setCurrentDocToken] = useState<string | null>(null);
   const [currentFilename, setCurrentFilename] = useState<string | undefined>();
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
+  const [currentSampleType, setCurrentSampleType] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditResult | null>(null);
   const [previewPages, setPreviewPages] = useState<string[]>([]);
 
@@ -161,6 +164,8 @@ export const App: React.FC = () => {
 
   // Upload handler
   const handleFileUpload = async (file: File) => {
+    setCurrentFile(file);
+    setCurrentSampleType(null);
     setLoadingUpload(true);
     setPreviewPages([]); // CLEAR previous preview immediately
     try {
@@ -184,6 +189,8 @@ export const App: React.FC = () => {
 
   // Sample load handler
   const handleLoadSample = async (sampleType: string) => {
+    setCurrentSampleType(sampleType);
+    setCurrentFile(null);
     setLoadingUpload(true);
     setPreviewPages([]); // CLEAR previous preview immediately
     try {
@@ -210,23 +217,28 @@ export const App: React.FC = () => {
 
   // Reformat & Generate Previews
   const handleReformat = async () => {
-    if (!currentDocToken) {
+    if (!currentDocToken && !currentFile && !currentSampleType) {
       alert('Please upload a document or load a sample first.');
       return;
     }
 
     setReformatting(true);
-    setPreviewPages([]); // CLEAR to avoid mixing
     try {
       const resp = await reformatDocument(
-        currentDocToken,
+        currentDocToken || 'direct',
         docType,
         schoolType,
         headerMode,
-        metadata
+        metadata,
+        currentFile,
+        currentSampleType
       );
-      setPreviewPages(resp.preview_pages || resp.preview_urls || []);
-      setAudit(resp.audit);
+      if (resp.token) setCurrentDocToken(resp.token);
+      const pages = resp.preview_pages || resp.preview_urls || [];
+      if (pages.length > 0) {
+        setPreviewPages(pages);
+      }
+      if (resp.audit) setAudit(resp.audit);
     } catch (err: any) {
       alert(err.message || 'Reformatting failed');
     } finally {
@@ -317,13 +329,17 @@ export const App: React.FC = () => {
       const devId = localStorage.getItem('acadformat_device_id') || '';
 
       const downloadUrl = `/api/download/${currentDocToken}/${fmt}`;
-      const res = await fetch(downloadUrl, {
+      let res = await fetch(downloadUrl, {
         headers: {
           Authorization: `Bearer ${token}`,
           'X-Session-Token': token || '',
           'X-Device-Id': devId
         }
       });
+
+      if (res.status === 404 && (currentFile || currentSampleType)) {
+        res = await downloadDirectDocument(docType, schoolType, headerMode, metadata, currentFile, currentSampleType, fmt);
+      }
 
       if (res.status === 401) {
         setIsAuthOpen(true);
@@ -418,7 +434,7 @@ export const App: React.FC = () => {
             onMetadataChange={setMetadata}
             onReformat={handleReformat}
             reformatting={reformatting}
-            canReformat={Boolean(currentDocToken)}
+            canReformat={Boolean(currentDocToken || currentFile || currentSampleType)}
           />
 
           <AuditScorecard audit={audit} />
@@ -434,6 +450,7 @@ export const App: React.FC = () => {
             downloading={downloading}
             metadata={metadata}
             onPromptAI={handlePromptAI}
+            isProcessing={loadingUpload || reformatting}
           />
         </section>
       </main>

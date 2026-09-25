@@ -315,5 +315,17 @@ class TestUBaPipeline(unittest.TestCase):
         self.assertNotIn("CERTIFICATION OF CORRECTIONS AFTER DEFENSE", all_text, "Internship should not have defense certification!")
         print("[Test] Internship Report preliminaries verified successfully according to UBa standards!")
 
+    def test_preview_base64_data_urls(self):
+        """Verifies that generate_document_previews generates valid Base64 data URLs for instant client preview."""
+        from backend.converter import generate_document_previews
+        out_pdf, files, data_urls = generate_document_previews(
+            TEST_DOCX, OUT_DIR, os.path.join(OUT_DIR, "previews_test"), dpi=100, max_pages=5
+        )
+        self.assertGreater(len(files), 0)
+        self.assertEqual(len(files), len(data_urls))
+        self.assertTrue(data_urls[0].startswith("data:image/png;base64,"))
+        print(f"[Test] Successfully generated {len(data_urls)} Base64 data URLs for instant zero-request client rendering.")
+
 if __name__ == "__main__":
     unittest.main()
+

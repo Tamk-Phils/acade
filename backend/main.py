@@ -446,12 +446,23 @@ async def audit_endpoint(
             metadata=parsed.metadata
         )
         preview_pages = []
+        preview_data_urls = []
         out_pdf_path = None
         try:
             restructure_document(parsed, req, out_docx_path)
-            out_pdf_path, preview_pages = generate_document_previews(out_docx_path, session_dir, preview_dir, dpi=120)
+            target_preview_docx = out_docx_path if os.path.exists(out_docx_path) else upload_path
+            out_pdf_path, preview_pages, preview_data_urls = generate_document_previews(
+                target_preview_docx, session_dir, preview_dir, dpi=120, max_pages=14, metadata=parsed.metadata
+            )
         except Exception as gen_err:
-            print(f"[AcadFormat] Notice: Initial preview generation on upload skipped: {gen_err}")
+            print(f"[AcadFormat] Notice: Initial preview generation on upload fallback: {gen_err}")
+            try:
+                if file_ext == ".docx" and os.path.exists(upload_path):
+                    _, preview_pages, preview_data_urls = generate_document_previews(
+                        upload_path, session_dir, preview_dir, dpi=120, max_pages=14, metadata=parsed.metadata
+                    )
+            except Exception:
+                pass
 
         session_data = {
             "parsed": parsed,
@@ -476,7 +487,7 @@ async def audit_endpoint(
             "school_type": school_type,
             "header_mode": header_mode,
             "audit": audit_res.dict(),
-            "preview_pages": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+            "preview_pages": preview_data_urls if preview_data_urls else [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
             "preview_urls": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
             "page_count": len(preview_pages)
         }
@@ -493,10 +504,57 @@ async def reformat_endpoint(
     doc_type: str = Form("dissertation_bsc"),
     school_type: str = Form("coltech"),
     header_mode: str = Form("center_crest"),
-    metadata_json: Optional[str] = Form(None)
+    metadata_json: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    sample_type: Optional[str] = Form(None)
 ):
     """Restructures the document into standard-compliant .docx and print-ready .pdf with page previews."""
     session = get_or_restore_session(token)
+    if not session:
+        # Stateless recovery if file or sample was passed
+        session_dir = os.path.join(STORAGE_DIR, token)
+        os.makedirs(session_dir, exist_ok=True)
+        if file:
+            try:
+                upload_path = os.path.join(session_dir, f"original_{file.filename}")
+                with open(upload_path, "wb") as f:
+                    shutil.copyfileobj(file.file, f)
+                parsed = parse_document(upload_path)
+                audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode)
+                session = {
+                    "parsed": parsed,
+                    "audit": audit_res,
+                    "upload_path": upload_path,
+                    "session_dir": session_dir,
+                    "doc_type": doc_type,
+                    "school_type": school_type,
+                    "header_mode": header_mode
+                }
+                SESSIONS[token] = session
+            except Exception as rec_err:
+                print(f"[AcadFormat] Error during stateless file recovery: {rec_err}")
+        elif sample_type:
+            try:
+                source_file = os.path.join(BASE_DIR, "assets", "sample_dissertation.docx")
+                if sample_type == "user_proposal":
+                    source_file = os.path.join(BASE_DIR, "storage", "5460b15f-a9d3-4474-a318-d787960598a6", "original.docx")
+                target_copy = os.path.join(session_dir, os.path.basename(source_file))
+                shutil.copyfile(source_file, target_copy)
+                parsed = parse_document(target_copy)
+                audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode)
+                session = {
+                    "parsed": parsed,
+                    "audit": audit_res,
+                    "upload_path": target_copy,
+                    "session_dir": session_dir,
+                    "doc_type": doc_type,
+                    "school_type": school_type,
+                    "header_mode": header_mode
+                }
+                SESSIONS[token] = session
+            except Exception as rec_err:
+                print(f"[AcadFormat] Error during stateless sample recovery: {rec_err}")
+
     if not session:
         raise HTTPException(status_code=404, detail="Session expired or token not found. Please upload again.")
 
@@ -539,8 +597,10 @@ async def reformat_endpoint(
         # 1. Restructure to standard DOCX
         restructure_document(parsed, req, out_docx_path)
 
-        # 2. Generate PDF and page previews (LibreOffice or pure-Python fallback)
-        out_pdf_path, preview_pages = generate_document_previews(out_docx_path, session_dir, preview_dir, dpi=120)
+        # 2. Generate PDF and page previews (pure-Python + optional LibreOffice)
+        out_pdf_path, preview_pages, preview_data_urls = generate_document_previews(
+            out_docx_path, session_dir, preview_dir, dpi=120, max_pages=14, metadata=meta
+        )
 
         session["formatted_docx"] = out_docx_path
         if out_pdf_path and os.path.exists(out_pdf_path):
@@ -560,7 +620,7 @@ async def reformat_endpoint(
             "status": "success",
             "page_count": len(preview_pages),
             "preview_urls": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
-            "preview_pages": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+            "preview_pages": preview_data_urls if preview_data_urls else [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
             "download_docx": f"/api/download/{token}/docx",
             "download_pdf": f"/api/download/{token}/pdf" if out_pdf_path else None,
             "pdf_available": bool(out_pdf_path)
@@ -721,10 +781,13 @@ async def load_sample(sample_type: str):
         metadata=parsed.metadata
     )
     preview_pages = []
+    preview_data_urls = []
     out_pdf_path = None
     try:
         restructure_document(parsed, req, out_docx_path)
-        out_pdf_path, preview_pages = generate_document_previews(out_docx_path, session_dir, preview_dir, dpi=120)
+        out_pdf_path, preview_pages, preview_data_urls = generate_document_previews(
+            out_docx_path, session_dir, preview_dir, dpi=120, max_pages=14, metadata=parsed.metadata
+        )
     except Exception as gen_err:
         print(f"[AcadFormat] Notice: Sample preview generation skipped: {gen_err}")
 
@@ -752,10 +815,104 @@ async def load_sample(sample_type: str):
         "school_type": school_type,
         "header_mode": header_mode,
         "audit": audit_res.dict(),
-        "preview_pages": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+        "preview_pages": preview_data_urls if preview_data_urls else [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
         "preview_urls": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
         "page_count": len(preview_pages)
     }
+
+
+@app.post("/api/download-direct")
+async def download_direct_endpoint(
+    session_token: Optional[str] = Form(None),
+    device_id: Optional[str] = Form(None),
+    doc_type: str = Form("dissertation_bsc"),
+    school_type: str = Form("coltech"),
+    header_mode: str = Form("center_crest"),
+    metadata_json: Optional[str] = Form(None),
+    fmt: str = Form("docx"),
+    file: Optional[UploadFile] = File(None),
+    sample_type: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None),
+    x_session_token: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None)
+):
+    """
+    Stateless direct document exporter. Restructures and delivers the official .docx
+    even if the request is handled by a brand new ephemeral serverless container.
+    """
+    auth_tok = extract_auth_token(session_token, authorization, x_session_token)
+    if not auth_tok:
+        return JSONResponse(status_code=401, content={
+            "status": "unauthorized",
+            "error": "authentication_required",
+            "message": "Please sign in or create a free account to export official documents."
+        })
+
+    user = get_user_by_session(auth_tok)
+    if not user:
+        return JSONResponse(status_code=401, content={
+            "status": "unauthorized",
+            "error": "session_expired",
+            "message": "Your session has expired. Please sign in again."
+        })
+
+    dev_id = device_id or (x_device_id.strip() if x_device_id else None)
+    eligibility = check_download_eligibility(user["id"], dev_id)
+    if not eligibility.get("allowed", False):
+        return JSONResponse(status_code=402, content={
+            "status": "payment_required",
+            "reason": eligibility.get("reason", "trial_expired"),
+            "message": eligibility.get("message", "Payment required to export."),
+            "device_matched": eligibility.get("device_matched", True),
+            "trial_active": eligibility.get("trial_active", False),
+            "paid_active": eligibility.get("paid_active", False),
+            "price_xaf": 250,
+            "validity_days": 7,
+            "operators": ["mtn_momo", "orange_money"]
+        })
+
+    temp_token = str(uuid.uuid4())
+    temp_dir = os.path.join(STORAGE_DIR, temp_token)
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_in = os.path.join(temp_dir, "input.docx")
+    temp_out = os.path.join(temp_dir, "output.docx")
+
+    if file:
+        with open(temp_in, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    elif sample_type:
+        src = os.path.join(BASE_DIR, "assets", "sample_dissertation.docx")
+        if sample_type == "user_proposal":
+            src = os.path.join(BASE_DIR, "storage", "5460b15f-a9d3-4474-a318-d787960598a6", "original.docx")
+        shutil.copyfile(src, temp_in)
+    else:
+        raise HTTPException(status_code=400, detail="Either file or sample_type is required for direct export.")
+
+    parsed = parse_document(temp_in)
+    meta = parsed.metadata
+    if metadata_json:
+        try:
+            m_dict = json.loads(metadata_json)
+            meta = DocumentMetadata(**m_dict)
+        except Exception:
+            pass
+
+    if school_type in ALL_ESTABLISHMENTS:
+        est = ALL_ESTABLISHMENTS[school_type]
+        meta.faculty = est["name_en"]
+        meta.faculty_code = est["code"]
+        meta.motto = est["motto"]
+
+    req = ReformatRequest(doc_type=doc_type, school_type=school_type, header_mode=header_mode, metadata=meta)
+    restructure_document(parsed, req, temp_out)
+
+    school = school_type.upper()
+    prefix = f"UBa_{school}_{doc_type.capitalize()}"
+    return FileResponse(
+        temp_out,
+        filename=f"{prefix}_Official.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 
 # ---------------------------------------------------------

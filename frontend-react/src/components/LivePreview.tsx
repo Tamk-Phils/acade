@@ -9,6 +9,7 @@ interface LivePreviewProps {
   downloading: boolean;
   metadata?: DocumentMetadata;
   onPromptAI?: (prompt: string) => void;
+  isProcessing?: boolean;
 }
 
 export const LivePreview: React.FC<LivePreviewProps> = ({
@@ -18,7 +19,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
   onDownload,
   downloading,
   metadata,
-  onPromptAI
+  onPromptAI,
+  isProcessing = false
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
   const [zoom, setZoom] = useState(100);
@@ -214,9 +216,37 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
           </button>
         </div>
 
-        {/* Center: Zoom Controls (Only when in page preview mode) */}
+        {/* Center: Page Navigation & Zoom Controls (Only when in page preview mode) */}
         {activeTab === 'pages' && (
-          <div className="toolbar-group">
+          <div className="toolbar-group" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            {/* Page Navigation */}
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+              disabled={!hasPages || currentPage === 0}
+              title="Previous Page"
+              style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
+            >
+              ◀ Prev
+            </button>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-primary)', padding: '0 0.25rem', whiteSpace: 'nowrap' }}>
+              Page {hasPages ? currentPage + 1 : 0} of {previewPages.length}
+            </span>
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={() => setCurrentPage((p) => Math.min(previewPages.length - 1, p + 1))}
+              disabled={!hasPages || currentPage >= previewPages.length - 1}
+              title="Next Page"
+              style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
+            >
+              Next ▶
+            </button>
+
+            <span style={{ color: 'var(--color-border)', margin: '0 2px' }}>|</span>
+
+            {/* Zoom Controls */}
             <button
               type="button"
               className="btn-tool"
@@ -226,7 +256,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             >
               -
             </button>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '40px', textAlign: 'center' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '36px', textAlign: 'center' }}>
               {zoom}%
             </span>
             <button
@@ -374,7 +404,39 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
       {/* Main Viewport */}
       {activeTab === 'pages' ? (
         <div className="preview-viewport" ref={viewportRef}>
-          {hasPages && currentImageUrl ? (
+          {isProcessing ? (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#334155',
+                height: '100%',
+                minHeight: '440px',
+                padding: '2rem',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  border: '4px solid #E2E8F0',
+                  borderTopColor: 'var(--color-primary)',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                  marginBottom: '1.25rem'
+                }}
+              />
+              <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                Structuring Manuscript to Senate Standards...
+              </p>
+              <p style={{ fontSize: '0.85rem', color: '#64748B', maxWidth: '420px', marginTop: '0.4rem', lineHeight: 1.5 }}>
+                Enforcing 4.0 cm left margins, single-line boxed title, preliminary Roman numerals, 15.0 cm TOC dot leaders, and rendering instant page previews.
+              </p>
+            </div>
+          ) : hasPages && currentImageUrl ? (
             <div
               className="preview-sheet"
               style={{
@@ -385,6 +447,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                 src={currentImageUrl}
                 alt={`Page ${currentPage + 1}`}
                 loading="eager"
+                onError={(e) => {
+                  console.warn('Page preview image loading fallback', currentImageUrl?.slice(0, 30));
+                }}
               />
             </div>
           ) : token ? (
