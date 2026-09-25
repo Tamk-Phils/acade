@@ -65,7 +65,8 @@ def _resolve_storage_dir():
 STORAGE_DIR = _resolve_storage_dir()
 
 REACT_DIST_DIR = os.path.join(BASE_DIR, "frontend-react", "dist")
-FRONTEND_DIR = REACT_DIST_DIR if os.path.isdir(REACT_DIST_DIR) else os.path.join(BASE_DIR, "frontend")
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+FRONTEND_DIR = PUBLIC_DIR if os.path.isdir(PUBLIC_DIR) else (REACT_DIST_DIR if os.path.isdir(REACT_DIST_DIR) else os.path.join(BASE_DIR, "frontend"))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 try:
@@ -868,9 +869,14 @@ async def serve_assets(file_path: str):
         return FileResponse(proj_asset)
     raise HTTPException(status_code=404, detail="Asset not found")
 
-# Root route fallback for health status
+# Root and index.html routes: serve frontend if available, else JSON status
 @app.get("/")
+@app.get("/index.html")
 async def root_index():
+    for fdir in [PUBLIC_DIR, REACT_DIST_DIR, FRONTEND_DIR]:
+        index_file = os.path.join(fdir, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
     return {
         "status": "online",
         "app": "AcadFormat Academic Identity API",
@@ -894,11 +900,16 @@ async def global_exception_handler(request, exc):
         }
     )
 
+# Mount frontend UI root if directory exists
+active_frontend_dir = None
+for fdir in [PUBLIC_DIR, REACT_DIST_DIR, FRONTEND_DIR]:
+    if os.path.isdir(fdir) and os.path.isfile(os.path.join(fdir, "index.html")):
+        active_frontend_dir = fdir
+        break
 
-# Mount frontend UI root only when running locally as standalone server and directory exists
-if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") and os.path.isdir(FRONTEND_DIR):
+if active_frontend_dir:
     try:
-        app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=active_frontend_dir, html=True), name="frontend")
     except Exception as mount_err:
         print(f"[AcadFormat] Static frontend mount skipped: {mount_err}")
 

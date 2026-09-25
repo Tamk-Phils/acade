@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm install --prefix frontend-react && npm run build --prefix frontend-react",
-  "outputDirectory": "frontend-react/dist",
+  "buildCommand": "npm install --prefix frontend-react && npm run build --prefix frontend-react && rm -rf public && cp -r frontend-react/dist public",
+  "outputDirectory": "public",
   "rewrites": [
     {
       "source": "/api",
@@ -9,10 +9,10 @@
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.py"
+      "destination": "/api/index.py/$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api|assets|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ]
