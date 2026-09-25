@@ -36,7 +36,7 @@ from backend.chatbot import generate_chat_response
 from backend.parser import parse_document
 from backend.auditor import audit_document
 from backend.restructurer import restructure_document
-from backend.converter import convert_docx_to_pdf, generate_page_previews
+from backend.converter import convert_docx_to_pdf, generate_page_previews, generate_document_previews
 from backend.database import (
     save_document_record, save_reformat_record, is_supabase_configured, list_recent_documents,
     create_user, authenticate_user, create_session, get_user_by_session, check_download_eligibility,
@@ -65,8 +65,7 @@ def _resolve_storage_dir():
 STORAGE_DIR = _resolve_storage_dir()
 
 REACT_DIST_DIR = os.path.join(BASE_DIR, "frontend-react", "dist")
-PUBLIC_DIR = os.path.join(BASE_DIR, "public")
-FRONTEND_DIR = PUBLIC_DIR if os.path.isdir(PUBLIC_DIR) else (REACT_DIST_DIR if os.path.isdir(REACT_DIST_DIR) else os.path.join(BASE_DIR, "frontend"))
+FRONTEND_DIR = REACT_DIST_DIR if os.path.isdir(REACT_DIST_DIR) else os.path.join(BASE_DIR, "frontend")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 try:
@@ -437,15 +436,38 @@ async def audit_endpoint(
         except Exception as db_err:
             print(f"[AcadFormat] Error saving audit to database: {db_err}")
 
-        SESSIONS[token] = {
+        # Automatically generate initial formatted manuscript and page previews
+        out_docx_path = os.path.join(session_dir, "formatted.docx")
+        preview_dir = os.path.join(session_dir, "previews")
+        req = ReformatRequest(
+            doc_type=doc_type,
+            school_type=school_type,
+            header_mode=header_mode,
+            metadata=parsed.metadata
+        )
+        preview_pages = []
+        out_pdf_path = None
+        try:
+            restructure_document(parsed, req, out_docx_path)
+            out_pdf_path, preview_pages = generate_document_previews(out_docx_path, session_dir, preview_dir, dpi=120)
+        except Exception as gen_err:
+            print(f"[AcadFormat] Notice: Initial preview generation on upload skipped: {gen_err}")
+
+        session_data = {
             "parsed": parsed,
             "audit": audit_res,
             "upload_path": upload_path,
             "session_dir": session_dir,
             "doc_type": doc_type,
             "school_type": school_type,
-            "header_mode": header_mode
+            "header_mode": header_mode,
+            "formatted_docx": out_docx_path,
+            "preview_pages": preview_pages
         }
+        if out_pdf_path and os.path.exists(out_pdf_path):
+            session_data["formatted_pdf"] = out_pdf_path
+
+        SESSIONS[token] = session_data
 
         return {
             "token": token,
@@ -453,7 +475,10 @@ async def audit_endpoint(
             "doc_type": doc_type,
             "school_type": school_type,
             "header_mode": header_mode,
-            "audit": audit_res.dict()
+            "audit": audit_res.dict(),
+            "preview_pages": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+            "preview_urls": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+            "page_count": len(preview_pages)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
@@ -514,14 +539,8 @@ async def reformat_endpoint(
         # 1. Restructure to standard DOCX
         restructure_document(parsed, req, out_docx_path)
 
-        # 2. Convert to PDF via headless LibreOffice (if installed on system)
-        out_pdf_path = None
-        preview_pages = []
-        try:
-            out_pdf_path = convert_docx_to_pdf(out_docx_path, session_dir)
-            preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=120)
-        except Exception as conv_err:
-            print(f"[AcadFormat] Notice: PDF/Preview generation skipped: {conv_err}")
+        # 2. Generate PDF and page previews (LibreOffice or pure-Python fallback)
+        out_pdf_path, preview_pages = generate_document_previews(out_docx_path, session_dir, preview_dir, dpi=120)
 
         session["formatted_docx"] = out_docx_path
         if out_pdf_path and os.path.exists(out_pdf_path):
@@ -692,15 +711,38 @@ async def load_sample(sample_type: str):
     except Exception as db_err:
         print(f"[AcadFormat] Error saving sample to database: {db_err}")
 
-    SESSIONS[token] = {
+    # Automatically generate initial formatted manuscript and page previews
+    out_docx_path = os.path.join(session_dir, "formatted.docx")
+    preview_dir = os.path.join(session_dir, "previews")
+    req = ReformatRequest(
+        doc_type=doc_type,
+        school_type=school_type,
+        header_mode=header_mode,
+        metadata=parsed.metadata
+    )
+    preview_pages = []
+    out_pdf_path = None
+    try:
+        restructure_document(parsed, req, out_docx_path)
+        out_pdf_path, preview_pages = generate_document_previews(out_docx_path, session_dir, preview_dir, dpi=120)
+    except Exception as gen_err:
+        print(f"[AcadFormat] Notice: Sample preview generation skipped: {gen_err}")
+
+    session_data = {
         "parsed": parsed,
         "audit": audit_res,
         "upload_path": target_copy,
         "session_dir": session_dir,
         "doc_type": doc_type,
         "school_type": school_type,
-        "header_mode": header_mode
+        "header_mode": header_mode,
+        "formatted_docx": out_docx_path,
+        "preview_pages": preview_pages
     }
+    if out_pdf_path and os.path.exists(out_pdf_path):
+        session_data["formatted_pdf"] = out_pdf_path
+
+    SESSIONS[token] = session_data
 
     return {
         "token": token,
@@ -709,7 +751,10 @@ async def load_sample(sample_type: str):
         "doc_type": doc_type,
         "school_type": school_type,
         "header_mode": header_mode,
-        "audit": audit_res.dict()
+        "audit": audit_res.dict(),
+        "preview_pages": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+        "preview_urls": [f"/api/preview/{token}/{i}" for i in range(len(preview_pages))],
+        "page_count": len(preview_pages)
     }
 
 
@@ -832,10 +877,7 @@ async def get_privacy_policy():
 @app.get("/api")
 @app.get("/api/")
 @app.get("/api/health")
-@app.get("/health")
-@app.get("/health/")
 async def health_check():
-
     """Returns platform health and multi-engine database status (Cloudflare D1, Supabase, Local SQLite)."""
     return {
         "status": "healthy",
@@ -869,14 +911,9 @@ async def serve_assets(file_path: str):
         return FileResponse(proj_asset)
     raise HTTPException(status_code=404, detail="Asset not found")
 
-# Root and index.html routes: serve frontend if available, else JSON status
+# Root route fallback for health status
 @app.get("/")
-@app.get("/index.html")
 async def root_index():
-    for fdir in [PUBLIC_DIR, REACT_DIST_DIR, FRONTEND_DIR]:
-        index_file = os.path.join(fdir, "index.html")
-        if os.path.isfile(index_file):
-            return FileResponse(index_file)
     return {
         "status": "online",
         "app": "AcadFormat Academic Identity API",
@@ -900,16 +937,11 @@ async def global_exception_handler(request, exc):
         }
     )
 
-# Mount frontend UI root if directory exists
-active_frontend_dir = None
-for fdir in [PUBLIC_DIR, REACT_DIST_DIR, FRONTEND_DIR]:
-    if os.path.isdir(fdir) and os.path.isfile(os.path.join(fdir, "index.html")):
-        active_frontend_dir = fdir
-        break
 
-if active_frontend_dir:
+# Mount frontend UI root only when running locally as standalone server and directory exists
+if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") and os.path.isdir(FRONTEND_DIR):
     try:
-        app.mount("/", StaticFiles(directory=active_frontend_dir, html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
     except Exception as mount_err:
         print(f"[AcadFormat] Static frontend mount skipped: {mount_err}")
 

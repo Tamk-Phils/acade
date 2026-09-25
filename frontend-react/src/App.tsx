@@ -171,6 +171,10 @@ export const App: React.FC = () => {
       if (resp.audit.metadata) {
         setMetadata((prev) => ({ ...prev, ...resp.audit.metadata }));
       }
+      const pages = resp.preview_pages || resp.preview_urls || [];
+      if (pages.length > 0) {
+        setPreviewPages(pages);
+      }
     } catch (err: any) {
       alert(err.message || 'Error processing document');
     } finally {
@@ -192,6 +196,10 @@ export const App: React.FC = () => {
       setAudit(resp.audit);
       if (resp.audit.metadata) {
         setMetadata((prev) => ({ ...prev, ...resp.audit.metadata }));
+      }
+      const pages = resp.preview_pages || resp.preview_urls || [];
+      if (pages.length > 0) {
+        setPreviewPages(pages);
       }
     } catch (err: any) {
       alert(err.message || 'Failed to load sample');

@@ -46,7 +46,7 @@ export async function uploadDocument(
   docType: string,
   schoolType: string,
   headerMode: string = 'center_crest'
-): Promise<{ token: string; filename: string; doc_type: string; school_type: string; header_mode?: string; audit: AuditResult }> {
+): Promise<{ token: string; filename: string; doc_type: string; school_type: string; header_mode?: string; audit: AuditResult; preview_pages?: string[]; preview_urls?: string[]; page_count?: number }> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('doc_type', docType);
@@ -64,7 +64,7 @@ export async function uploadDocument(
   return res.json();
 }
 
-export async function loadSample(sampleType: string): Promise<{ token: string; filename: string; doc_type: string; school_type: string; header_mode: string; audit: AuditResult }> {
+export async function loadSample(sampleType: string): Promise<{ token: string; filename: string; doc_type: string; school_type: string; header_mode: string; audit: AuditResult; preview_pages?: string[]; preview_urls?: string[]; page_count?: number }> {
   const res = await fetch(`${API_BASE}/sample/${sampleType}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed to load sample' }));

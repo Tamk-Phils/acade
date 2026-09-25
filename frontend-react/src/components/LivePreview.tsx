@@ -387,6 +387,64 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                 loading="eager"
               />
             </div>
+          ) : token ? (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#334155',
+                height: '100%',
+                minHeight: '400px',
+                padding: '2rem',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: '#EFF6FF',
+                  border: '1px solid #BFDBFE',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '1rem',
+                  color: 'var(--color-primary)'
+                }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+              </div>
+              <p style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                Manuscript Uploaded & Audited
+              </p>
+              <p style={{ fontSize: '0.85rem', color: '#64748B', maxWidth: '380px', marginTop: '0.35rem', lineHeight: 1.5 }}>
+                Your manuscript is active in the workspace. Click <strong>Reformat Document</strong> on the left, or switch to the <strong>Structure & AI Inspector</strong> tab above to view official Senate formatting cards.
+              </p>
+              <button
+                type="button"
+                className="btn-tool"
+                style={{
+                  marginTop: '1.25rem',
+                  padding: '0.45rem 1rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  background: 'var(--color-primary)',
+                  color: '#FFFFFF',
+                  borderColor: 'var(--color-primary)'
+                }}
+                onClick={() => setActiveTab('structure')}
+              >
+                📋 View Structure & Senate Checklist
+              </button>
+            </div>
           ) : (
             <div
               style={{
