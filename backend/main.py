@@ -82,7 +82,8 @@ app = FastAPI(
     title="AcadFormat — University of Bamenda Academic Identity & Formatting Platform",
     description="Automated audit, restructuring, authentication, and compliance conforming to official UBa Senate standards.",
     version="2.3.0",
-    redirect_slashes=False
+    redirect_slashes=False,
+    debug=True
 )
 
 app.add_middleware(
@@ -93,24 +94,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def api_path_prefix_middleware(request, call_next):
-    """Normalizes request path so routes work with or without /api/ prefix in serverless environments."""
-    path = request.scope.get("path", "")
-    if path.startswith("/api/index.py"):
-        path = path.replace("/api/index.py", "/api", 1)
-        if path == "/api":
-            path = "/api/health"
-        request.scope["path"] = path
-
-    if path and not path.startswith("/api/") and path != "/api":
-        target = f"/api{path}"
-        for route in app.routes:
-            route_path = getattr(route, "path", None)
-            if route_path and (route_path == target or route_path == f"{target}/" or target == f"{route_path}/"):
-                request.scope["path"] = target
-                break
-    return await call_next(request)
 
 
 SESSIONS = {}
@@ -183,8 +166,10 @@ def get_current_user_from_headers(
 # ---------------------------------------------------------
 # Academic Registry & Metadata
 # ---------------------------------------------------------
+@app.get("/academic-data")
 @app.get("/api/academic-data")
 async def get_academic_data():
+
     """Returns the full registry of UBa & CATUC establishments, departments, degrees, and document types."""
     return {
         "universities": UNIVERSITIES,
@@ -846,7 +831,10 @@ async def get_privacy_policy():
 @app.get("/api")
 @app.get("/api/")
 @app.get("/api/health")
+@app.get("/health")
+@app.get("/health/")
 async def health_check():
+
     """Returns platform health and multi-engine database status (Cloudflare D1, Supabase, Local SQLite)."""
     return {
         "status": "healthy",
@@ -889,21 +877,23 @@ async def root_index():
         "version": "2.3.0"
     }
 
-# Top-level error catching middleware to prevent opaque 500 FUNCTION_INVOCATION_FAILED errors
-@app.middleware("http")
-async def global_exception_logging_middleware(request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as exc:
-        import traceback
-        tb = traceback.format_exc()
-        print(f"[AcadFormat Unhandled Error] {exc}\n{tb}", file=sys.stderr)
-        return JSONResponse(status_code=500, content={
+# Top-level global exception handler for rich JSON error reports instead of opaque 500 errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    import traceback
+    tb = traceback.format_exc()
+    print(f"[AcadFormat Unhandled] {exc}\n{tb}", file=sys.stderr)
+    return JSONResponse(
+        status_code=500,
+        content={
             "status": "error",
-            "error": "internal_server_error",
+            "error_type": type(exc).__name__,
             "message": str(exc),
-            "path": request.url.path
-        })
+            "traceback": tb.split("\n"),
+            "path": request.scope.get("path") if hasattr(request, "scope") else None,
+        }
+    )
+
 
 # Mount frontend UI root only when running locally as standalone server and directory exists
 if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") and os.path.isdir(FRONTEND_DIR):
