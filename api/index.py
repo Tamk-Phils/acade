@@ -33,8 +33,9 @@ try:
     from backend.main import app as backend_app
     app = backend_app
 except Exception as e:
+    _err_msg = str(e)
     _err_trace = traceback.format_exc()
-    print(f"[AcadFormat Vercel Init Error] {e}\n{_err_trace}", file=sys.stderr)
+    print(f"[AcadFormat Vercel Init Error] {_err_msg}\n{_err_trace}", file=sys.stderr)
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
     async def fallback_diagnostic_handler(path: str):
@@ -43,9 +44,10 @@ except Exception as e:
             content={
                 "status": "error",
                 "message": "Backend initialization failed on Vercel runtime",
-                "error": str(e),
+                "error": _err_msg,
                 "traceback": _err_trace.split("\n"),
                 "python": sys.version,
                 "sys_path": sys.path
             }
         )
+
