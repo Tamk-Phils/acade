@@ -2,8 +2,10 @@
 Official Institutional Registry of The University of Bamenda (UBa) and Catholic University of Cameroon (CATUC) Bamenda.
 Contains all Faculties, Schools, Institutes, their official names, mottoes, degrees, and departments.
 """
+from typing import Optional, Dict, Any, List, Tuple
 
 UNIVERSITIES = {
+
     "uba": {
         "code": "UBA",
         "name_en": "THE UNIVERSITY OF BAMENDA",
