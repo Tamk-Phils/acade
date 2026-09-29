@@ -243,7 +243,23 @@ def parse_and_generate_local_nlp(
             applied["faculty_code"] = est_obj["code"]
             applied["motto"] = est_obj["motto"]
             actions.append("Configured COLTECH (College of Technology, UBa)")
-        elif any(f in low for f in ["faculty of science", "fs uba", "nahpi", "htttc", "httc", "fems", "falsh"]):
+        elif "htttc" in low or "technical teacher" in low or "enset" in low:
+            applied["institution"] = "uba"
+            applied["school_type"] = "htttc"
+            est_obj = ALL_ESTABLISHMENTS["htttc"]
+            applied["faculty"] = est_obj["name_en"]
+            applied["faculty_code"] = est_obj["code"]
+            applied["motto"] = est_obj["motto"]
+            actions.append("Configured HTTTC (Higher Technical Teacher Training College / ENSET Bambili)")
+        elif "httc" in low or "ens bambili" in low or "teacher training college" in low:
+            applied["institution"] = "uba"
+            applied["school_type"] = "httc"
+            est_obj = ALL_ESTABLISHMENTS["httc"]
+            applied["faculty"] = est_obj["name_en"]
+            applied["faculty_code"] = est_obj["code"]
+            applied["motto"] = est_obj["motto"]
+            actions.append("Configured HTTC (Higher Teacher Training College / ENS Bambili)")
+        elif any(f in low for f in ["faculty of science", "fs uba", "nahpi", "fems", "falsh"]):
             for code, est in ALL_ESTABLISHMENTS.items():
                 if est["university"] == "uba" and (est["code"].lower() in low or any(w in low for w in est["name_en"].lower().split() if len(w) > 4)):
                     applied["institution"] = "uba"
@@ -348,6 +364,54 @@ def parse_and_generate_local_nlp(
         applied["header_mode"] = "center_crest"
         actions.append("Switched header layout to Standard Centered Crest")
 
+    # 10. Custom Formatting & Editing Instructions (Deviations from Standard)
+    custom_cands = []
+    if any(k in low for k in ["arial", "calibri", "georgia", "helvetica", "font to", "font size", "single space", "double space", "1.15", "margins to", "unboxed title", "no box", "custom instruction", "specific instruction"]):
+        applied["custom_instructions"] = clean_msg
+        if "arial" in low:
+            applied["font_family"] = "Arial"
+            custom_cands.append("Font: Arial")
+        elif "calibri" in low:
+            applied["font_family"] = "Calibri"
+            custom_cands.append("Font: Calibri")
+        elif "georgia" in low:
+            applied["font_family"] = "Georgia"
+            custom_cands.append("Font: Georgia")
+
+        f_size = re.search(r'\b(10|11|12)\s*pt\b', low)
+        if f_size:
+            applied["font_size_pt"] = float(f_size.group(1))
+            custom_cands.append(f"Font Size: {f_size.group(1)}pt")
+
+        if "single space" in low or "1.0" in low:
+            applied["line_spacing"] = 1.0
+            custom_cands.append("Line Spacing: 1.0 Single")
+        elif "1.15" in low:
+            applied["line_spacing"] = 1.15
+            custom_cands.append("Line Spacing: 1.15 Compact")
+        elif "double space" in low or "2.0" in low:
+            applied["line_spacing"] = 2.0
+            custom_cands.append("Line Spacing: 2.0 Double")
+
+        if "2.5" in low or "1 inch" in low or "normal margin" in low:
+            applied["margin_left_cm"] = 2.54
+            applied["margin_right_cm"] = 2.54
+            applied["margin_top_cm"] = 2.54
+            applied["margin_bottom_cm"] = 2.54
+            custom_cands.append("Margins: 2.54cm (1 inch) Uniform")
+        elif "4cm" in low or "4.0" in low:
+            applied["margin_left_cm"] = 4.0
+            custom_cands.append("Binding Margin: 4.0cm Left")
+
+        if any(b in low for b in ["no box", "unboxed", "remove box", "without box"]):
+            applied["box_title"] = False
+            custom_cands.append("Cover Title: Unboxed (No border)")
+        elif "box title" in low or "boxed title" in low:
+            applied["box_title"] = True
+            custom_cands.append("Cover Title: Single-Line Boxed Border")
+
+        actions.append(f"Recorded Custom Formatting Instructions: {', '.join(custom_cands) if custom_cands else clean_msg[:60]}")
+
     # ---------------------------------------------------------
     # Synthesize Natural Conversational Responses
     # ---------------------------------------------------------
@@ -409,6 +473,21 @@ def parse_and_generate_local_nlp(
             "Would you like me to help you draft an abstract or translate your project objective into French?"
         )
         suggestions = ["Help me draft an Abstract", "Translate Abstract to French", "COLTECH Cover Layout"]
+
+    elif any(kw in low for kw in ["htttc", "httc", "enset", "ens bambili", "technical teacher"]):
+        reply = (
+            "**HTTTC (ENSET Bambili) vs HTTC (ENS Bambili) Institutional Differences:**\n\n"
+            "• **HTTTC (Higher Technical Teacher Training College / ENSET Bambili):**\n"
+            "  - Dedicated to **technical, industrial, and commercial education**.\n"
+            "  - Awards: **DIPET I**, **DIPET II**, **B.Tech**, and **M.Tech**.\n"
+            "  - Departments include Civil Engineering, Mechanical Engineering, Electrical & Power, Computer Science & IT, Administrative Techniques, etc.\n\n"
+            "• **HTTC (Higher Teacher Training College / ENS Bambili):**\n"
+            "  - Dedicated to **secondary general education and pedagogic training**.\n"
+            "  - Awards: **DIPES I**, **DIPES II**, and **Postgraduate Diploma in Education**.\n"
+            "  - Departments include English Modern Letters, French Modern Letters, Geography, History, Mathematics, Physics, Chemistry, Biology, etc.\n\n"
+            "You can say *\"Switch to HTTTC\"* or *\"Switch to HTTC\"* and I will adjust your document configuration immediately!"
+        )
+        suggestions = ["Switch to HTTTC (ENSET)", "Switch to HTTC (ENS)", "View DIPET Regulations"]
 
     elif any(kw in low for kw in ["catuc", "catholic", "catholic university", "fides", "fbms", "seng"]):
         reply = (

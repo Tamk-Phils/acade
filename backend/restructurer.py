@@ -20,6 +20,165 @@ ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 UBA_LOGO_PATH = os.path.join(ASSETS_DIR, "uba_logo.png")
 COLTECH_LOGO_PATH = os.path.join(ASSETS_DIR, "coltech_logo.png")
 
+class CustomFormattingRules:
+    """Holds parsed custom formatting rules that deviate from standard Senate guidelines."""
+    def __init__(self):
+        self.font_name: str = "Times New Roman"
+        self.font_size_pt: float = 12.0
+        self.heading1_size_pt: float = 14.0
+        self.heading2_size_pt: float = 12.0
+        self.line_spacing: float = 1.5
+        self.margin_left_cm: float = 4.0
+        self.margin_right_cm: float = 2.0
+        self.margin_top_cm: float = 2.0
+        self.margin_bottom_cm: float = 2.0
+        self.box_title: bool = True
+        self.alignment: WD_ALIGN_PARAGRAPH = WD_ALIGN_PARAGRAPH.JUSTIFY
+        self.has_custom_overrides: bool = False
+
+    @property
+    def font_family(self) -> str:
+        return self.font_name
+
+    @font_family.setter
+    def font_family(self, val: str):
+        self.font_name = val
+
+def parse_custom_formatting_rules(meta: Optional[DocumentMetadata] = None, req: Optional[ReformatRequest] = None) -> CustomFormattingRules:
+    """
+    Parses custom editing instructions and explicit overrides to support
+    non-standard user formatting specifications (e.g. Arial 11pt, 2.5cm margins, unboxed title).
+    """
+    rules = CustomFormattingRules()
+
+    # 1. Check direct properties on req or meta
+    for src in [meta, req]:
+        if not src:
+            continue
+        if getattr(src, "font_family", None):
+            rules.font_name = src.font_family.strip()
+            rules.has_custom_overrides = True
+        if getattr(src, "font_size_pt", None) and src.font_size_pt > 0:
+            rules.font_size_pt = float(src.font_size_pt)
+            rules.heading1_size_pt = rules.font_size_pt + 2.0
+            rules.heading2_size_pt = rules.font_size_pt
+            rules.has_custom_overrides = True
+        if getattr(src, "line_spacing", None) and src.line_spacing > 0:
+            rules.line_spacing = float(src.line_spacing)
+            rules.has_custom_overrides = True
+        if getattr(src, "margin_left_cm", None) and src.margin_left_cm > 0:
+            rules.margin_left_cm = float(src.margin_left_cm)
+            rules.has_custom_overrides = True
+        if getattr(src, "margin_right_cm", None) and src.margin_right_cm > 0:
+            rules.margin_right_cm = float(src.margin_right_cm)
+            rules.has_custom_overrides = True
+        if getattr(src, "margin_top_cm", None) and src.margin_top_cm > 0:
+            rules.margin_top_cm = float(src.margin_top_cm)
+            rules.has_custom_overrides = True
+        if getattr(src, "margin_bottom_cm", None) and src.margin_bottom_cm > 0:
+            rules.margin_bottom_cm = float(src.margin_bottom_cm)
+            rules.has_custom_overrides = True
+        if getattr(src, "box_title", None) is not None:
+            rules.box_title = bool(src.box_title)
+            rules.has_custom_overrides = True
+
+    # 2. Parse natural language instructions from custom_instructions
+    instructions = ""
+    if req and getattr(req, "custom_instructions", None):
+        instructions += " " + str(req.custom_instructions)
+    if meta and getattr(meta, "custom_instructions", None):
+        instructions += " " + str(meta.custom_instructions)
+
+    instructions = instructions.strip()
+    if instructions:
+        low = instructions.lower()
+        rules.has_custom_overrides = True
+
+        # Font family parsing
+        font_map = {
+            "arial": "Arial",
+            "calibri": "Calibri",
+            "georgia": "Georgia",
+            "cambria": "Cambria",
+            "helvetica": "Helvetica",
+            "verdana": "Verdana",
+            "garamond": "Garamond",
+            "palatino": "Palatino Linotype",
+            "trebuchet": "Trebuchet MS",
+            "courier": "Courier New",
+            "times new roman": "Times New Roman"
+        }
+        for k, v in font_map.items():
+            if re.search(rf'\b{k}\b', low):
+                rules.font_name = v
+                break
+
+        # Font size parsing (e.g. 10pt, 11pt, 12pt, 11 pt)
+        fsize_m = re.search(r'\b(9|10|10\.5|11|11\.5|12|13|14)\s*(?:pt|points?)\b', low)
+        if fsize_m:
+            rules.font_size_pt = float(fsize_m.group(1))
+            rules.heading1_size_pt = rules.font_size_pt + 2.0
+            rules.heading2_size_pt = rules.font_size_pt
+
+        # Line spacing parsing (e.g. single spacing, 1.15, 1.5, double spacing)
+        if re.search(r'\b(single(?:\s+spaced?|\s+line)?|1\.0(?:\s+spacing)?)\b', low):
+            rules.line_spacing = 1.0
+        elif re.search(r'\b(1\.15(?:\s+spaced?|\s+line)?)\b', low):
+            rules.line_spacing = 1.15
+        elif re.search(r'\b(double(?:\s+spaced?|\s+line)?|2\.0(?:\s+spacing)?)\b', low):
+            rules.line_spacing = 2.0
+        elif re.search(r'\b(1\.5(?:\s+spaced?|\s+line)?)\b', low):
+            rules.line_spacing = 1.5
+        else:
+            lsp_m = re.search(r'\bspacing\s*(?:of|is|to|=)?\s*(\d(?:\.\d+)?)\b', low)
+            if lsp_m:
+                rules.line_spacing = float(lsp_m.group(1))
+
+        # Margin parsing
+        if re.search(r'\b(1\s*inch|2\.54\s*cm|2\.5\s*cm|normal\s+margins?|standard\s+margins?)\b', low):
+            rules.margin_left_cm = 2.54
+            rules.margin_right_cm = 2.54
+            rules.margin_top_cm = 2.54
+            rules.margin_bottom_cm = 2.54
+        elif re.search(r'\b4(?:\.0)?\s*cm\s*(?:binding|left)?\s*margin\b', low):
+            rules.margin_left_cm = 4.0
+
+        # Specific margin side parsing
+        m_all = re.search(r'\b(\d+(?:\.\d+)?)\s*cm\s*(?:margins?|all\s+around|on\s+all\s+sides)\b', low)
+        if m_all:
+            val = float(m_all.group(1))
+            rules.margin_left_cm = val
+            rules.margin_right_cm = val
+            rules.margin_top_cm = val
+            rules.margin_bottom_cm = val
+
+        m_left = re.search(r'\b(?:left\s+margin|margin\s+left)\s*(?:of|is|to|=)?\s*(\d+(?:\.\d+)?)\s*(?:cm)?\b', low)
+        if m_left:
+            rules.margin_left_cm = float(m_left.group(1))
+        m_right = re.search(r'\b(?:right\s+margin|margin\s+right)\s*(?:of|is|to|=)?\s*(\d+(?:\.\d+)?)\s*(?:cm)?\b', low)
+        if m_right:
+            rules.margin_right_cm = float(m_right.group(1))
+        m_top = re.search(r'\b(?:top\s+margin|margin\s+top)\s*(?:of|is|to|=)?\s*(\d+(?:\.\d+)?)\s*(?:cm)?\b', low)
+        if m_top:
+            rules.margin_top_cm = float(m_top.group(1))
+        m_bottom = re.search(r'\b(?:bottom\s+margin|margin\s+bottom)\s*(?:of|is|to|=)?\s*(\d+(?:\.\d+)?)\s*(?:cm)?\b', low)
+        if m_bottom:
+            rules.margin_bottom_cm = float(m_bottom.group(1))
+
+        # Boxed title parsing
+        if re.search(r'\b(no\s+box(?:ed)?|remove\s+box|without\s+box|unboxed|no\s+border)\b', low):
+            rules.box_title = False
+        elif re.search(r'\b(box(?:ed)?\s+title|with\s+box|border\s+around\s+title)\b', low):
+            rules.box_title = True
+
+        # Alignment parsing
+        if re.search(r'\b(left\s+align(?:ed)?|align\s+left)\b', low):
+            rules.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        elif re.search(r'\b(justif(?:ied|y))\b', low):
+            rules.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    return rules
+
 def set_cell_margins(cell, top=60, bottom=60, left=60, right=60):
     """Set zero or tight margins for header table cells."""
     tcPr = cell._tc.get_or_add_tcPr()
@@ -37,7 +196,7 @@ def set_cell_background(cell, hex_color: str):
     shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{hex_color}"/>')
     tcPr.append(shd)
 
-def add_boxed_title(doc: docx.Document, title_text: str):
+def add_boxed_title(doc: docx.Document, title_text: str, font_name: str = "Times New Roman"):
     """
     Renders the document title inside a clean rectangular single-line border box,
     centered horizontally with appropriate internal padding.
@@ -66,7 +225,7 @@ def add_boxed_title(doc: docx.Document, title_text: str):
     p.paragraph_format.space_after = Pt(6)
     p.paragraph_format.line_spacing = 1.2
     r = p.add_run(title_text.upper())
-    r.font.name = "Times New Roman"
+    r.font.name = font_name
     r.font.size = Pt(13)
     r.font.bold = True
 
@@ -246,15 +405,34 @@ def get_purpose_clause(doc_type: str, meta: DocumentMetadata) -> str:
         )
 
 
-def build_cover_page(doc: docx.Document, meta: DocumentMetadata, doc_type: str = "dissertation_bsc", header_mode: str = "center_crest", add_page_break: bool = True):
+def build_cover_page(
+    doc: docx.Document,
+    meta: DocumentMetadata,
+    doc_type: str = "dissertation_bsc",
+    header_mode: str = "center_crest",
+    add_page_break: bool = True,
+    custom_rules: Optional[CustomFormattingRules] = None
+):
     """Builds the official Cover Page conforming strictly to UBa and Establishment specifications."""
+    rules = custom_rules or CustomFormattingRules()
     add_header_banner(doc, meta, doc_type, header_mode)
 
-    # Document Title in a clean rectangular single-line box
+    # Document Title in a clean rectangular single-line box or unboxed if specified
     p_sp = doc.add_paragraph()
     p_sp.paragraph_format.space_before = Pt(10)
     p_sp.paragraph_format.space_after = Pt(2)
-    add_boxed_title(doc, meta.title)
+    if not rules.box_title:
+        p_title = doc.add_paragraph()
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_title.paragraph_format.space_before = Pt(14)
+        p_title.paragraph_format.space_after = Pt(14)
+        p_title.paragraph_format.line_spacing = 1.2
+        r_t = p_title.add_run(meta.title.upper())
+        r_t.font.name = rules.font_name
+        r_t.font.size = Pt(13)
+        r_t.font.bold = True
+    else:
+        add_boxed_title(doc, meta.title, font_name=rules.font_name)
 
     # Purpose Clause
     p_clause = doc.add_paragraph()
@@ -264,7 +442,7 @@ def build_cover_page(doc: docx.Document, meta: DocumentMetadata, doc_type: str =
     p_clause.paragraph_format.line_spacing = 1.3
     
     r_clause = p_clause.add_run(get_purpose_clause(doc_type, meta))
-    r_clause.font.name = "Times New Roman"
+    r_clause.font.name = rules.font_name
     r_clause.font.size = Pt(12)
 
     # Candidate / Group / Supervision Section
@@ -1558,71 +1736,88 @@ def find_true_body_start_index(paragraphs: List[Dict[str, Any]], doc_type: str =
     return 0
 
 
-def format_body_paragraph(p, text: str, is_chapter: bool = False, is_sub1: bool = False, is_sub2: bool = False, is_ref: bool = False):
-    """Applies strict UBa Times New Roman formatting, indentation, and spacing to paragraphs."""
+def format_body_paragraph(
+    p,
+    text: str,
+    is_chapter: bool = False,
+    is_sub1: bool = False,
+    is_sub2: bool = False,
+    is_ref: bool = False,
+    custom_rules: Optional[CustomFormattingRules] = None
+):
+    """Applies UBa/custom formatting, font family, indentation, and spacing to paragraphs."""
+    rules = custom_rules or CustomFormattingRules()
     p.text = ""
-    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+    p.paragraph_format.line_spacing = rules.line_spacing
 
     if is_chapter:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(24)
         p.paragraph_format.space_after = Pt(18)
         run = p.add_run(text.upper())
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(14)
+        run.font.name = rules.font_name
+        run.font.size = Pt(rules.heading1_size_pt)
         run.font.bold = True
     elif is_sub1:
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.space_before = Pt(14)
         p.paragraph_format.space_after = Pt(6)
         run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(12)
+        run.font.name = rules.font_name
+        run.font.size = Pt(rules.heading2_size_pt)
         run.font.bold = True
     elif is_sub2:
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.space_before = Pt(10)
         p.paragraph_format.space_after = Pt(4)
         run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(12)
+        run.font.name = rules.font_name
+        run.font.size = Pt(rules.font_size_pt)
         run.font.bold = True
     elif is_ref:
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        p.paragraph_format.line_spacing = 1.15
+        p.paragraph_format.line_spacing = min(1.15, rules.line_spacing)
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(6)
         p.paragraph_format.left_indent = Inches(0.5)
         p.paragraph_format.first_line_indent = Inches(-0.5)
         run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(12)
+        run.font.name = rules.font_name
+        run.font.size = Pt(rules.font_size_pt)
     else:
-        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.alignment = rules.alignment
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(6)
         run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(12)
+        run.font.name = rules.font_name
+        run.font.size = Pt(rules.font_size_pt)
 
 
 def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_path: str):
     """
     Core function that builds a complete, standard-compliant UBa/COLTECH document
-    and writes it to output_path.
+    (or customized document matching specific user instructions) and writes it to output_path.
     """
     doc = docx.Document()
+    meta = req.metadata if req.metadata else parsed.metadata
+    rules = parse_custom_formatting_rules(meta, req)
 
-    # 1. Page Dimensions & 4.0 cm Binding Margin Setup
+    # Set default document style font
+    try:
+        norm_style = doc.styles['Normal']
+        norm_style.font.name = rules.font_name
+        norm_style.font.size = Pt(rules.font_size_pt)
+    except Exception:
+        pass
+
+    # 1. Page Dimensions & Margins Setup (Standard 4.0cm binding or custom user margin)
     section = doc.sections[0]
     section.page_width = Cm(21.0)
     section.page_height = Cm(29.7)
-    section.left_margin = Cm(4.0)   # Mandatory 4.0 cm inner binding margin
-    section.right_margin = Cm(2.0)
-    section.top_margin = Cm(2.0)
-    section.bottom_margin = Cm(2.0)
-
-    meta = req.metadata if req.metadata else parsed.metadata
+    section.left_margin = Cm(rules.margin_left_cm)
+    section.right_margin = Cm(rules.margin_right_cm)
+    section.top_margin = Cm(rules.margin_top_cm)
+    section.bottom_margin = Cm(rules.margin_bottom_cm)
 
     # 2. Extract Clean Document Body Content First (for dynamic TOC & section layout)
     start_idx = find_true_body_start_index(parsed.paragraphs, req.doc_type)
@@ -1641,16 +1836,16 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
 
     # 3. Build Cover Page & Title Page (Section 0 - unnumbered)
     has_title_page = (req.doc_type not in ["internship", "assignment"])
-    build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=has_title_page)
+    build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=has_title_page, custom_rules=rules)
     if has_title_page:
-        build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=False)
+        build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=False, custom_rules=rules)
 
     # 4. Add Section Break for Preliminaries (Section 1 - centered lowerRoman from ii)
     prelim_section = doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
-    prelim_section.left_margin = Cm(4.0)
-    prelim_section.right_margin = Cm(2.0)
-    prelim_section.top_margin = Cm(2.0)
-    prelim_section.bottom_margin = Cm(2.0)
+    prelim_section.left_margin = Cm(rules.margin_left_cm)
+    prelim_section.right_margin = Cm(rules.margin_right_cm)
+    prelim_section.top_margin = Cm(rules.margin_top_cm)
+    prelim_section.bottom_margin = Cm(rules.margin_bottom_cm)
     prelim_section.header.is_linked_to_previous = False
     prelim_section.footer.is_linked_to_previous = False
 
@@ -1668,7 +1863,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
     f_run_p._r.append(instrText)
     f_run_p._r.append(fldChar2)
     f_run_p._r.append(fldChar3)
-    f_run_p.font.name = "Times New Roman"
+    f_run_p.font.name = rules.font_name
     f_run_p.font.size = Pt(11)
 
     # 5. Build Preliminaries according to Document Type
@@ -1694,10 +1889,10 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
 
     # 6. Add Section Break for Main Body (Section 2 - centered decimal from 1)
     body_section = doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
-    body_section.left_margin = Cm(4.0)
-    body_section.right_margin = Cm(2.0)
-    body_section.top_margin = Cm(2.0)
-    body_section.bottom_margin = Cm(2.0)
+    body_section.left_margin = Cm(rules.margin_left_cm)
+    body_section.right_margin = Cm(rules.margin_right_cm)
+    body_section.top_margin = Cm(rules.margin_top_cm)
+    body_section.bottom_margin = Cm(rules.margin_bottom_cm)
     body_section.header.is_linked_to_previous = False
     body_section.footer.is_linked_to_previous = False
 
@@ -1716,8 +1911,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
     f_run._r.append(instrText)
     f_run._r.append(fldChar2)
     f_run._r.append(fldChar3)
-    f_run.font.name = "Times New Roman"
+    f_run.font.name = rules.font_name
     f_run.font.size = Pt(11)
+
+    def format_p(p, text, is_chapter=False, is_sub1=False, is_sub2=False, is_ref=False):
+        return format_body_paragraph(p, text, is_chapter=is_chapter, is_sub1=is_sub1, is_sub2=is_sub2, is_ref=is_ref, custom_rules=rules)
 
     source_docx = None
     if getattr(parsed, "source_path", None) and parsed.source_path.lower().endswith(".docx") and os.path.exists(parsed.source_path):
@@ -1757,7 +1955,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         is_sub_1_1 = bool(re.match(r'^1\.[01](?:\s+|$)', first_text))
         if is_sub_1_1 and not has_explicit_ch1 and req.doc_type != "assignment":
             p_ch1 = doc.add_paragraph()
-            format_body_paragraph(p_ch1, "CHAPTER 1\nINTRODUCTION", is_chapter=True)
+            format_p(p_ch1, "CHAPTER 1\nINTRODUCTION", is_chapter=True)
             current_chapter = 1
 
         if source_docx and source_start_elem_idx >= 0:
@@ -1786,7 +1984,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
                         doc.add_page_break()
                         p_elem = doc.add_paragraph()
-                        format_body_paragraph(p_elem, "REFERENCES", is_chapter=True)
+                        format_p(p_elem, "REFERENCES", is_chapter=True)
                         in_references = True
                         current_chapter = 99
                         continue
@@ -1795,7 +1993,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     if any(raw_t.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
                         doc.add_page_break()
                         p_elem = doc.add_paragraph()
-                        format_body_paragraph(p_elem, raw_t.upper(), is_chapter=True)
+                        format_p(p_elem, raw_t.upper(), is_chapter=True)
                         in_references = False
                         current_chapter = 100
                         continue
@@ -1817,7 +2015,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         p_elem = doc.add_paragraph()
                         ch_sub = ch_match.group(2).strip().upper() if ch_match.group(2) else ""
                         ch_text = f"CHAPTER {explicit_ch_num}" + (f"\n{ch_sub}" if ch_sub else "")
-                        format_body_paragraph(p_elem, ch_text, is_chapter=True)
+                        format_p(p_elem, ch_text, is_chapter=True)
                         current_chapter = explicit_ch_num
                         in_references = False
                         continue
@@ -1843,7 +2041,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                             else:
                                 ch_title = f"CHAPTER {sec_ch_num}"
                             
-                            format_body_paragraph(p_ch, ch_title, is_chapter=True)
+                            format_p(p_ch, ch_title, is_chapter=True)
                             current_chapter = sec_ch_num
 
                     # Format paragraph
@@ -1862,16 +2060,16 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         lvl = 3
 
                     if in_references:
-                        format_body_paragraph(p_elem, raw_t, is_ref=True)
+                        format_p(p_elem, raw_t, is_ref=True)
                     elif is_h:
                         if lvl == 1 or "CHAPTER" in raw_t.upper():
-                            format_body_paragraph(p_elem, raw_t, is_chapter=True)
+                            format_p(p_elem, raw_t, is_chapter=True)
                         elif lvl == 2:
-                            format_body_paragraph(p_elem, raw_t, is_sub1=True)
+                            format_p(p_elem, raw_t, is_sub1=True)
                         else:
-                            format_body_paragraph(p_elem, raw_t, is_sub2=True)
+                            format_p(p_elem, raw_t, is_sub2=True)
                     else:
-                        format_body_paragraph(p_elem, raw_t)
+                        format_p(p_elem, raw_t)
         else:
             # Fallback for plain body_paras (e.g. from PDF)
             for p_info in body_paras:
@@ -1879,14 +2077,14 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                 if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
                     doc.add_page_break()
                     p_elem = doc.add_paragraph()
-                    format_body_paragraph(p_elem, "REFERENCES", is_chapter=True)
+                    format_p(p_elem, "REFERENCES", is_chapter=True)
                     in_references = True
                     current_chapter = 99
                     continue
                 if any(raw_t.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
                     doc.add_page_break()
                     p_elem = doc.add_paragraph()
-                    format_body_paragraph(p_elem, raw_t.upper(), is_chapter=True)
+                    format_p(p_elem, raw_t.upper(), is_chapter=True)
                     in_references = False
                     current_chapter = 100
                     continue
@@ -1905,7 +2103,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     p_elem = doc.add_paragraph()
                     ch_sub = ch_match.group(2).strip().upper() if ch_match.group(2) else ""
                     ch_text = f"CHAPTER {explicit_ch_num}" + (f"\n{ch_sub}" if ch_sub else "")
-                    format_body_paragraph(p_elem, ch_text, is_chapter=True)
+                    format_p(p_elem, ch_text, is_chapter=True)
                     current_chapter = explicit_ch_num
                     in_references = False
                     continue
@@ -1928,31 +2126,31 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                             ch_title = "CHAPTER 5\nCONCLUSION AND RECOMMENDATIONS"
                         else:
                             ch_title = f"CHAPTER {sec_ch_num}"
-                        format_body_paragraph(p_ch, ch_title, is_chapter=True)
+                        format_p(p_ch, ch_title, is_chapter=True)
                         current_chapter = sec_ch_num
                 p_elem = doc.add_paragraph()
                 if in_references:
-                    format_body_paragraph(p_elem, raw_t, is_ref=True)
+                    format_p(p_elem, raw_t, is_ref=True)
                 elif p_info.get("is_heading"):
                     lvl = p_info.get("level", 1)
                     if lvl == 1 or "CHAPTER" in raw_t.upper():
-                        format_body_paragraph(p_elem, raw_t, is_chapter=True)
+                        format_p(p_elem, raw_t, is_chapter=True)
                     elif lvl == 2:
-                        format_body_paragraph(p_elem, raw_t, is_sub1=True)
+                        format_p(p_elem, raw_t, is_sub1=True)
                     else:
-                        format_body_paragraph(p_elem, raw_t, is_sub2=True)
+                        format_p(p_elem, raw_t, is_sub2=True)
                 else:
-                    format_body_paragraph(p_elem, raw_t)
+                    format_p(p_elem, raw_t)
     else:
         # Default starter content if uploaded document had very few paragraphs
         p_ch1 = doc.add_paragraph()
-        format_body_paragraph(p_ch1, "CHAPTER 1\nINTRODUCTION", is_chapter=True)
+        format_p(p_ch1, "CHAPTER 1\nINTRODUCTION", is_chapter=True)
         
         p_s1 = doc.add_paragraph()
-        format_body_paragraph(p_s1, "1.1 Background of the Study", is_sub1=True)
+        format_p(p_s1, "1.1 Background of the Study", is_sub1=True)
         
         p_b1 = doc.add_paragraph()
-        format_body_paragraph(p_b1, f"The University of Bamenda was established to drive excellence in higher education and professional training. Under {meta.faculty}, research and technical implementation are closely aligned with national development objectives. This work titled “{meta.title}” investigates key architectural principles and system methodologies.")
+        format_p(p_b1, f"The University of Bamenda was established to drive excellence in higher education and professional training. Under {meta.faculty}, research and technical implementation are closely aligned with national development objectives. This work titled “{meta.title}” investigates key architectural principles and system methodologies.")
 
     doc.save(output_path)
     return output_path

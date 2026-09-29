@@ -45,13 +45,17 @@ export async function uploadDocument(
   file: File,
   docType: string,
   schoolType: string,
-  headerMode: string = 'center_crest'
+  headerMode: string = 'center_crest',
+  customInstructions?: string
 ): Promise<{ token: string; filename: string; doc_type: string; school_type: string; header_mode?: string; audit: AuditResult; preview_pages?: string[]; preview_urls?: string[]; page_count?: number }> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('doc_type', docType);
   formData.append('school_type', schoolType);
   formData.append('header_mode', headerMode);
+  if (customInstructions) {
+    formData.append('custom_instructions', customInstructions);
+  }
 
   const res = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
@@ -88,6 +92,9 @@ export async function reformatDocument(
   formData.append('school_type', schoolType);
   formData.append('header_mode', headerMode);
   formData.append('metadata_json', JSON.stringify(metadata));
+  if (metadata.custom_instructions) {
+    formData.append('custom_instructions', metadata.custom_instructions);
+  }
   if (file) {
     formData.append('file', file);
   }
@@ -120,6 +127,9 @@ export async function downloadDirectDocument(
   formData.append('school_type', schoolType);
   formData.append('header_mode', headerMode);
   formData.append('metadata_json', JSON.stringify(metadata));
+  if (metadata.custom_instructions) {
+    formData.append('custom_instructions', metadata.custom_instructions);
+  }
   formData.append('fmt', fmt);
   if (file) formData.append('file', file);
   if (sampleType) formData.append('sample_type', sampleType);

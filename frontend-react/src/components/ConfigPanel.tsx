@@ -436,6 +436,103 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           </div>
         </div>
 
+        {/* Custom Editing & Non-Standard Instructions */}
+        <div className="custom-instructions-section" style={{
+          marginTop: '1.25rem',
+          padding: '1rem',
+          borderRadius: '10px',
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+            <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', margin: 0, color: '#1e293b' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+              </svg>
+              Custom Editing Instructions
+            </label>
+            {metadata.custom_instructions ? (
+              <span style={{ fontSize: '0.72rem', color: '#059669', background: '#ecfdf5', padding: '2px 8px', borderRadius: '12px', fontWeight: 600, border: '1px solid #a7f3d0' }}>
+                Custom Rules Active
+              </span>
+            ) : (
+              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Non-standard overrides</span>
+            )}
+          </div>
+          <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 0.6rem 0', lineHeight: 1.4 }}>
+            Need non-standard formatting (e.g. Arial 11pt, 1.15 line spacing, 2.5cm margins, unboxed title)? Type instructions below or click quick presets.
+          </p>
+
+          {/* Quick preset chips */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '0.6rem' }}>
+            {[
+              { label: 'Arial 11pt', text: 'Use Arial 11pt font. ' },
+              { label: '1.15 Spacing', text: 'Set line spacing to 1.15. ' },
+              { label: 'Single Spacing', text: 'Set line spacing to 1.0 (single). ' },
+              { label: '2.54cm / 1in Margins', text: 'Use 2.54cm (1 inch) margins. ' },
+              { label: 'Unboxed Title', text: 'Do not put the cover title in a box. ' },
+            ].map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  const current = metadata.custom_instructions || '';
+                  if (!current.includes(preset.label) && !current.includes(preset.text.trim())) {
+                    handleFieldChange('custom_instructions', (current ? current.trim() + ' ' : '') + preset.text);
+                  }
+                }}
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#334155',
+                  cursor: 'pointer',
+                  fontWeight: 500
+                }}
+              >
+                + {preset.label}
+              </button>
+            ))}
+            {metadata.custom_instructions && (
+              <button
+                type="button"
+                onClick={() => handleFieldChange('custom_instructions', '')}
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #fecaca',
+                  background: '#fef2f2',
+                  color: '#dc2626',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                ✕ Reset to Standard
+              </button>
+            )}
+          </div>
+
+          <textarea
+            className="form-control"
+            rows={3}
+            placeholder="e.g. Please use Arial 11pt font, 1.15 line spacing, 2.5cm left/right margins, and do not put title in a box..."
+            value={metadata.custom_instructions || ''}
+            onChange={(e) => handleFieldChange('custom_instructions', e.target.value)}
+            style={{ width: '100%', resize: 'vertical', fontSize: '0.85rem' }}
+          />
+        </div>
+
         {/* Action Button: Format Document */}
         <button
           type="button"

@@ -41,7 +41,16 @@ class DocumentMetadata(BaseModel):
     group_name: Optional[str] = "Group 1"
     group_members: List[GroupMember] = Field(default_factory=list)
     show_grading_column: bool = True
-    grading_column_title: str = "Score / 20"
+    # Custom instructions & non-standard formatting overrides
+    custom_instructions: Optional[str] = ""
+    font_family: Optional[str] = None
+    font_size_pt: Optional[float] = None
+    line_spacing: Optional[float] = None
+    margin_left_cm: Optional[float] = None
+    margin_right_cm: Optional[float] = None
+    margin_top_cm: Optional[float] = None
+    margin_bottom_cm: Optional[float] = None
+    box_title: Optional[bool] = None
 
 class AuditIssue(BaseModel):
     id: str
@@ -69,6 +78,15 @@ class ReformatRequest(BaseModel):
     school_type: str = "coltech"
     header_mode: str = "center_crest"
     metadata: Optional[DocumentMetadata] = None
+    custom_instructions: Optional[str] = ""
+    font_family: Optional[str] = None
+    font_size_pt: Optional[float] = None
+    line_spacing: Optional[float] = None
+    margin_left_cm: Optional[float] = None
+    margin_right_cm: Optional[float] = None
+    margin_top_cm: Optional[float] = None
+    margin_bottom_cm: Optional[float] = None
+    box_title: Optional[bool] = None
     apply_margins: bool = True
     apply_typography: bool = True
     apply_preliminaries: bool = True

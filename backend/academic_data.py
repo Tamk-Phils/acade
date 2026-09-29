@@ -2,6 +2,7 @@
 Official Institutional Registry of The University of Bamenda (UBa) and Catholic University of Cameroon (CATUC) Bamenda.
 Contains all Faculties, Schools, Institutes, their official names, mottoes, degrees, and departments.
 """
+import copy
 from typing import Optional, Dict, Any, List, Tuple
 
 UNIVERSITIES = {
@@ -210,13 +211,13 @@ UBA_ESTABLISHMENTS = {
             "Transit and Customs Clearance"
         ]
     },
-    "httc": {
+    "htttc": {
         "university": "uba",
-        "code": "HTTC",
-        "name_en": "HIGHER TECHNICAL TEACHER TRAINING COLLEGE",
+        "code": "HTTTC",
+        "name_en": "HIGHER TECHNICAL TEACHER TRAINING COLLEGE (ENSET BAMBILI)",
         "name_fr": "ÉCOLE NORMALE SUPÉRIEURE DE L'ENSEIGNEMENT TECHNIQUE (ENSET)",
         "motto": "Innovating Technical Pedagogy",
-        "degrees": ["DIPET I", "DIPET II"],
+        "degrees": ["DIPET I", "DIPET II", "B.Tech", "M.Tech"],
         "default_doc_types": ["dissertation_bsc", "dissertation_msc", "internship", "proposal", "assignment"],
         "departments": [
             "Civil Engineering and Forestry",
@@ -229,13 +230,13 @@ UBA_ESTABLISHMENTS = {
             "Sciences of Education"
         ]
     },
-    "ens": {
+    "httc": {
         "university": "uba",
-        "code": "ENS",
+        "code": "HTTC",
         "name_en": "HIGHER TEACHER TRAINING COLLEGE (ENS BAMBILI)",
         "name_fr": "ÉCOLE NORMALE SUPÉRIEURE DE BAMBILI",
         "motto": "Pioneering Pedagogic Excellence",
-        "degrees": ["DIPES I", "DIPES II"],
+        "degrees": ["DIPES I", "DIPES II", "Postgraduate Diploma in Education"],
         "default_doc_types": ["dissertation_bsc", "dissertation_msc", "internship", "proposal", "assignment"],
         "departments": [
             "Biology",
@@ -248,7 +249,8 @@ UBA_ESTABLISHMENTS = {
             "Physics",
             "Computer Science",
             "Philosophy",
-            "Bilingual Letters"
+            "Bilingual Letters",
+            "Sciences of Education"
         ]
     },
     "nahpi": {
@@ -383,6 +385,10 @@ CATUC_ESTABLISHMENTS = {
         ]
     }
 }
+
+# Alias for backwards compatibility: 'ens' maps to 'httc'
+UBA_ESTABLISHMENTS["ens"] = copy.deepcopy(UBA_ESTABLISHMENTS["httc"])
+UBA_ESTABLISHMENTS["ens"]["code"] = "ENS"
 
 # Unified Establishments Registry
 ALL_ESTABLISHMENTS = {**UBA_ESTABLISHMENTS, **CATUC_ESTABLISHMENTS}

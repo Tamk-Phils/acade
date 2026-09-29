@@ -10,7 +10,8 @@ def audit_document(
     doc: ParsedDocument,
     doc_type: str = "dissertation_bsc",
     school_type: str = "coltech",
-    header_mode: str = "center_crest"
+    header_mode: str = "center_crest",
+    custom_instructions: str = None
 ) -> AuditResult:
     """
     Audits a parsed document against UBa Senate Regulations and School Guidelines.
@@ -21,6 +22,20 @@ def audit_document(
     missing_sections: List[str] = []
     passed_checks = 0
     total_checks = 0
+
+    # Custom Instructions acknowledgement
+    active_instructions = custom_instructions or getattr(doc.metadata, "custom_instructions", None)
+    if active_instructions and active_instructions.strip():
+        inst_snippet = active_instructions.strip()
+        if len(inst_snippet) > 80:
+            inst_snippet = inst_snippet[:77] + "..."
+        issues.append(AuditIssue(
+            id="custom-instructions-active",
+            category="structure",
+            severity="info",
+            message=f"Custom Editing Instructions Active: \"{inst_snippet}\". These specific instructions will take precedence over standard Senate rules.",
+            recommendation="Your custom rules will be applied dynamically during document restructuring."
+        ))
 
     # 1. Margins Check
     total_checks += 1

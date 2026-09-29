@@ -64,6 +64,15 @@ export interface DocumentMetadata {
   group_members?: GroupMember[];
   show_grading_column?: boolean;
   grading_column_title?: string;
+  custom_instructions?: string;
+  font_family?: string;
+  font_size_pt?: number;
+  line_spacing?: number;
+  margin_left_cm?: number;
+  margin_right_cm?: number;
+  margin_top_cm?: number;
+  margin_bottom_cm?: number;
+  box_title?: boolean;
 }
 
 export interface AuditIssue {

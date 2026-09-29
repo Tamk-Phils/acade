@@ -51,7 +51,8 @@ const defaultMetadata: DocumentMetadata = {
   group_name: 'Group 1',
   group_members: [],
   show_grading_column: true,
-  grading_column_title: 'Score / 20'
+  grading_column_title: 'Score / 20',
+  custom_instructions: ''
 };
 
 export const App: React.FC = () => {
@@ -169,7 +170,7 @@ export const App: React.FC = () => {
     setLoadingUpload(true);
     setPreviewPages([]); // CLEAR previous preview immediately
     try {
-      const resp = await uploadDocument(file, docType, schoolType, headerMode);
+      const resp = await uploadDocument(file, docType, schoolType, headerMode, metadata.custom_instructions);
       setCurrentDocToken(resp.token);
       setCurrentFilename(resp.filename);
       setAudit(resp.audit);
@@ -269,6 +270,7 @@ export const App: React.FC = () => {
     if (changes.is_group_assignment !== undefined) updatedMetadata.is_group_assignment = changes.is_group_assignment;
     if (changes.group_members) updatedMetadata.group_members = changes.group_members;
     if (changes.show_grading_column !== undefined) updatedMetadata.show_grading_column = changes.show_grading_column;
+    if (changes.custom_instructions !== undefined) updatedMetadata.custom_instructions = changes.custom_instructions;
 
     if (changes.institution && changes.institution !== institution) {
       newInstitution = changes.institution as 'uba' | 'catuc';

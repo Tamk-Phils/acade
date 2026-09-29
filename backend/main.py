@@ -387,7 +387,8 @@ async def audit_endpoint(
     file: UploadFile = File(...),
     doc_type: str = Form("dissertation_bsc"),
     school_type: str = Form("coltech"),
-    header_mode: str = Form("center_crest")
+    header_mode: str = Form("center_crest"),
+    custom_instructions: Optional[str] = Form(None)
 ):
     """Audits an uploaded document in milliseconds and returns the compliance scorecard."""
     token = str(uuid.uuid4())
@@ -405,6 +406,9 @@ async def audit_endpoint(
     try:
         parsed = parse_document(upload_path)
 
+        if custom_instructions:
+            parsed.metadata.custom_instructions = custom_instructions
+
         # Infer school and doc_type from parsed metadata if detected
         if parsed.metadata.faculty_code and parsed.metadata.faculty_code.lower() in UBA_ESTABLISHMENTS:
             school_type = parsed.metadata.faculty_code.lower()
@@ -420,7 +424,13 @@ async def audit_endpoint(
         elif parsed.metadata.degree_code == "MSc":
             doc_type = "dissertation_msc"
 
-        audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode)
+        audit_res = audit_document(
+            parsed,
+            doc_type=doc_type,
+            school_type=school_type,
+            header_mode=header_mode,
+            custom_instructions=custom_instructions
+        )
         
         # Persist document record
         try:
@@ -505,6 +515,7 @@ async def reformat_endpoint(
     school_type: str = Form("coltech"),
     header_mode: str = Form("center_crest"),
     metadata_json: Optional[str] = Form(None),
+    custom_instructions: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     sample_type: Optional[str] = Form(None)
 ):
@@ -520,7 +531,7 @@ async def reformat_endpoint(
                 with open(upload_path, "wb") as f:
                     shutil.copyfileobj(file.file, f)
                 parsed = parse_document(upload_path)
-                audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode)
+                audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode, custom_instructions=custom_instructions)
                 session = {
                     "parsed": parsed,
                     "audit": audit_res,
@@ -541,7 +552,7 @@ async def reformat_endpoint(
                 target_copy = os.path.join(session_dir, os.path.basename(source_file))
                 shutil.copyfile(source_file, target_copy)
                 parsed = parse_document(target_copy)
-                audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode)
+                audit_res = audit_document(parsed, doc_type=doc_type, school_type=school_type, header_mode=header_mode, custom_instructions=custom_instructions)
                 session = {
                     "parsed": parsed,
                     "audit": audit_res,
@@ -579,6 +590,11 @@ async def reformat_endpoint(
         except Exception:
             pass
 
+    if custom_instructions and not meta.custom_instructions:
+        meta.custom_instructions = custom_instructions
+    elif not custom_instructions and meta.custom_instructions:
+        custom_instructions = meta.custom_instructions
+
     # Ensure school and department consistency
     if school_type in ALL_ESTABLISHMENTS:
         est = ALL_ESTABLISHMENTS[school_type]
@@ -590,7 +606,8 @@ async def reformat_endpoint(
         doc_type=doc_type,
         school_type=school_type,
         header_mode=header_mode,
-        metadata=meta
+        metadata=meta,
+        custom_instructions=custom_instructions or meta.custom_instructions
     )
 
     try:
@@ -829,6 +846,7 @@ async def download_direct_endpoint(
     school_type: str = Form("coltech"),
     header_mode: str = Form("center_crest"),
     metadata_json: Optional[str] = Form(None),
+    custom_instructions: Optional[str] = Form(None),
     fmt: str = Form("docx"),
     file: Optional[UploadFile] = File(None),
     sample_type: Optional[str] = Form(None),
@@ -897,13 +915,24 @@ async def download_direct_endpoint(
         except Exception:
             pass
 
+    if custom_instructions and not meta.custom_instructions:
+        meta.custom_instructions = custom_instructions
+    elif not custom_instructions and meta.custom_instructions:
+        custom_instructions = meta.custom_instructions
+
     if school_type in ALL_ESTABLISHMENTS:
         est = ALL_ESTABLISHMENTS[school_type]
         meta.faculty = est["name_en"]
         meta.faculty_code = est["code"]
         meta.motto = est["motto"]
 
-    req = ReformatRequest(doc_type=doc_type, school_type=school_type, header_mode=header_mode, metadata=meta)
+    req = ReformatRequest(
+        doc_type=doc_type,
+        school_type=school_type,
+        header_mode=header_mode,
+        metadata=meta,
+        custom_instructions=custom_instructions or meta.custom_instructions
+    )
     restructure_document(parsed, req, temp_out)
 
     school = school_type.upper()

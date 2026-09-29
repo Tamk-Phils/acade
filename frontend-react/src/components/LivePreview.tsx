@@ -216,89 +216,59 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
           </button>
         </div>
 
-        {/* Center: Page Navigation & Zoom Controls (Only when in page preview mode) */}
+        {/* Center: Zoom Controls (Only when in page preview mode) */}
         {activeTab === 'pages' && (
-          <div className="toolbar-group preview-controls-group">
-            {/* Page Navigation */}
-            <div className="nav-controls-cluster">
-              <button
-                type="button"
-                className="btn-tool"
-                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                disabled={!hasPages || currentPage === 0}
-                title="Previous Page"
-                style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
-              >
-                ◀ Prev
-              </button>
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-primary)', padding: '0 0.25rem', whiteSpace: 'nowrap' }}>
-                Page {hasPages ? currentPage + 1 : 0} of {previewPages.length}
-              </span>
-              <button
-                type="button"
-                className="btn-tool"
-                onClick={() => setCurrentPage((p) => Math.min(previewPages.length - 1, p + 1))}
-                disabled={!hasPages || currentPage >= previewPages.length - 1}
-                title="Next Page"
-                style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
-              >
-                Next ▶
-              </button>
-            </div>
+          <div className="toolbar-group">
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={handleZoomOut}
+              disabled={!hasPages}
+              title="Zoom Out"
+            >
+              -
+            </button>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '40px', textAlign: 'center' }}>
+              {zoom}%
+            </span>
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={handleZoomIn}
+              disabled={!hasPages}
+              title="Zoom In"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={handleZoomReset}
+              disabled={!hasPages}
+              title="Reset Zoom"
+            >
+              100%
+            </button>
 
-            {/* Zoom Controls */}
-            <div className="zoom-controls-cluster">
-              <button
-                type="button"
-                className="btn-tool"
-                onClick={handleZoomOut}
-                disabled={!hasPages}
-                title="Zoom Out"
-              >
-                -
-              </button>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '36px', textAlign: 'center' }}>
-                {zoom}%
-              </span>
-              <button
-                type="button"
-                className="btn-tool"
-                onClick={handleZoomIn}
-                disabled={!hasPages}
-                title="Zoom In"
-              >
-                +
-              </button>
-              <button
-                type="button"
-                className="btn-tool"
-                onClick={handleZoomReset}
-                disabled={!hasPages}
-                title="Reset Zoom"
-              >
-                100%
-              </button>
-
-              {/* Full Screen Preview Button */}
-              <button
-                type="button"
-                className="btn-tool"
-                onClick={toggleFullscreen}
-                disabled={!hasPages}
-                title="Enter Fullscreen Preview"
-                style={{ fontWeight: 700, color: 'var(--color-primary)' }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-                </svg>
-                Full Screen
-              </button>
-            </div>
+            {/* Full Screen Preview Button */}
+            <button
+              type="button"
+              className="btn-tool"
+              onClick={toggleFullscreen}
+              disabled={!hasPages}
+              title="Enter Fullscreen Preview"
+              style={{ fontWeight: 700, color: 'var(--color-primary)' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+              </svg>
+              Full Screen
+            </button>
           </div>
         )}
 
         {/* Right: Export Actions */}
-        <div className="toolbar-group export-actions-group">
+        <div className="toolbar-group">
           <button
             type="button"
             className="btn-export docx"
@@ -406,53 +376,17 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
       {/* Main Viewport */}
       {activeTab === 'pages' ? (
         <div className="preview-viewport" ref={viewportRef}>
-          {isProcessing ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#334155',
-                height: '100%',
-                minHeight: '440px',
-                padding: '2rem',
-                textAlign: 'center'
-              }}
-            >
-              <div
-                style={{
-                  width: '44px',
-                  height: '44px',
-                  border: '4px solid #E2E8F0',
-                  borderTopColor: 'var(--color-primary)',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite',
-                  marginBottom: '1.25rem'
-                }}
-              />
-              <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                Structuring Manuscript to Senate Standards...
-              </p>
-              <p style={{ fontSize: '0.85rem', color: '#64748B', maxWidth: '420px', marginTop: '0.4rem', lineHeight: 1.5 }}>
-                Enforcing 4.0 cm left margins, single-line boxed title, preliminary Roman numerals, 15.0 cm TOC dot leaders, and rendering instant page previews.
-              </p>
-            </div>
-          ) : hasPages && currentImageUrl ? (
+          {hasPages && currentImageUrl ? (
             <div
               className="preview-sheet"
               style={{
-                width: zoom === 100 ? '100%' : `${Math.round(720 * (zoom / 100))}px`,
-                maxWidth: zoom === 100 ? '720px' : 'none'
+                width: `${Math.round(720 * (zoom / 100))}px`
               }}
             >
               <img
                 src={currentImageUrl}
                 alt={`Page ${currentPage + 1}`}
                 loading="eager"
-                onError={(e) => {
-                  console.warn('Page preview image loading fallback', currentImageUrl?.slice(0, 30));
-                }}
               />
             </div>
           ) : token ? (
