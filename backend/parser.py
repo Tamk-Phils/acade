@@ -4,11 +4,54 @@ from DOCX and PDF files with pinpoint accuracy.
 """
 import re
 import os
-import docx
 from typing import Dict, List, Any, Optional
+import docx
 from pypdf import PdfReader
 from backend.models import DocumentMetadata
 from backend.academic_data import UBA_ESTABLISHMENTS, resolve_department_and_option
+
+# -----------------------------------------------------------------------------
+# Patch python-docx XML mappings for 'start' and 'end' alignments
+# Modern Word (2013+), Google Docs, and LibreOffice generate <w:jc w:val="start"/>
+# and <w:jc w:val="end"/> which throw ValueError in unpatched python-docx.
+# -----------------------------------------------------------------------------
+try:
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+    _orig_para_from_xml = WD_PARAGRAPH_ALIGNMENT.from_xml
+
+    @classmethod
+    def _safe_para_from_xml(cls, xml_value: Optional[str]):
+        if xml_value == "start":
+            return cls.LEFT
+        if xml_value == "end":
+            return cls.RIGHT
+        try:
+            return _orig_para_from_xml(xml_value)
+        except (ValueError, KeyError):
+            return cls.LEFT
+
+    WD_PARAGRAPH_ALIGNMENT.from_xml = _safe_para_from_xml
+except Exception:
+    pass
+
+try:
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    _orig_tbl_from_xml = WD_TABLE_ALIGNMENT.from_xml
+
+    @classmethod
+    def _safe_tbl_from_xml(cls, xml_value: Optional[str]):
+        if xml_value == "start":
+            return cls.LEFT
+        if xml_value == "end":
+            return cls.RIGHT
+        try:
+            return _orig_tbl_from_xml(xml_value)
+        except (ValueError, KeyError):
+            return cls.LEFT
+
+    WD_TABLE_ALIGNMENT.from_xml = _safe_tbl_from_xml
+except Exception:
+    pass
 
 IGNORE_TITLE_PHRASES = [
     "THE UNIVERSITY OF BAMENDA",
@@ -223,13 +266,20 @@ def parse_docx(file_path: str) -> ParsedDocument:
             except (ValueError, TypeError):
                 pass
 
+        align_str = "LEFT"
+        try:
+            if p.alignment is not None:
+                align_str = str(p.alignment).split(".")[-1].split(" ")[0].upper()
+        except Exception:
+            align_str = "LEFT"
+
         para_info = {
             "text": txt,
             "style": style_name,
             "is_heading": is_heading,
             "level": level,
             "bold": any(r.bold for r in p.runs),
-            "alignment": str(p.alignment) if p.alignment else "LEFT"
+            "alignment": align_str
         }
         parsed.paragraphs.append(para_info)
         if is_heading:

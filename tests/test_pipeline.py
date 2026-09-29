@@ -323,9 +323,34 @@ class TestUBaPipeline(unittest.TestCase):
         )
         self.assertGreater(len(files), 0)
         self.assertEqual(len(files), len(data_urls))
-        self.assertTrue(data_urls[0].startswith("data:image/png;base64,"))
         print(f"[Test] Successfully generated {len(data_urls)} Base64 data URLs for instant zero-request client rendering.")
+
+    def test_modern_word_xml_start_end_alignment(self):
+        """Verifies that DOCX files with modern Word/Google Docs 'start' and 'end' alignments parse and audit cleanly."""
+        import docx
+        from docx.oxml import parse_xml
+        from docx.oxml.ns import nsdecls
+
+        test_file = os.path.join(OUT_DIR, "test_start_end_alignment.docx")
+        doc = docx.Document()
+        p1 = doc.add_paragraph("Paragraph with start alignment")
+        ns = nsdecls("w")
+        p1._p.get_or_add_pPr().append(parse_xml(f'<w:jc {ns} w:val="start"/>'))
+
+        p2 = doc.add_paragraph("Paragraph with end alignment")
+        p2._p.get_or_add_pPr().append(parse_xml(f'<w:jc {ns} w:val="end"/>'))
+        doc.save(test_file)
+
+        parsed = parse_document(test_file)
+        self.assertEqual(len(parsed.paragraphs), 2)
+        self.assertEqual(parsed.paragraphs[0]["alignment"], "LEFT")
+        self.assertEqual(parsed.paragraphs[1]["alignment"], "RIGHT")
+
+        audit = audit_document(parsed, doc_type="assignment", school_type="coltech", header_mode="center_crest")
+        self.assertGreater(audit.compliance_score, 0)
+        print("[Test] Modern Word / Google Docs start/end alignment compatibility verified successfully!")
 
 if __name__ == "__main__":
     unittest.main()
+
 

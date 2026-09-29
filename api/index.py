@@ -23,6 +23,47 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+# -----------------------------------------------------------------------------
+# Patch python-docx XML mappings for 'start' and 'end' alignments
+# -----------------------------------------------------------------------------
+try:
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+    _orig_para_from_xml = WD_PARAGRAPH_ALIGNMENT.from_xml
+
+    @classmethod
+    def _safe_para_from_xml(cls, xml_value):
+        if xml_value == "start":
+            return cls.LEFT
+        if xml_value == "end":
+            return cls.RIGHT
+        try:
+            return _orig_para_from_xml(xml_value)
+        except (ValueError, KeyError):
+            return cls.LEFT
+
+    WD_PARAGRAPH_ALIGNMENT.from_xml = _safe_para_from_xml
+except Exception:
+    pass
+
+try:
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    _orig_tbl_from_xml = WD_TABLE_ALIGNMENT.from_xml
+
+    @classmethod
+    def _safe_tbl_from_xml(cls, xml_value):
+        if xml_value == "start":
+            return cls.LEFT
+        if xml_value == "end":
+            return cls.RIGHT
+        try:
+            return _orig_tbl_from_xml(xml_value)
+        except (ValueError, KeyError):
+            return cls.LEFT
+
+    WD_TABLE_ALIGNMENT.from_xml = _safe_tbl_from_xml
+except Exception:
+    pass
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
