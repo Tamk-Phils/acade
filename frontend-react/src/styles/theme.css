@@ -309,11 +309,15 @@ body {
   }
 }
 
-/* ---------------- Sidebar Panels ---------------- */
-.sidebar-panel {
+/* ---------------- Sidebar Panels & Workspace Panels ---------------- */
+.sidebar-panel,
+.workspace-panel {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .card {
@@ -981,13 +985,24 @@ body {
 /* ---------------- Comprehensive Mobile & Tablet Responsive Media Queries ---------------- */
 @media (max-width: 1080px) {
   .main-container {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     padding: 0 1rem;
     margin: 1rem auto;
   }
 }
 
 @media (max-width: 768px) {
+  /* Prevent iOS Safari auto-zoom on input focus */
+  input,
+  select,
+  textarea,
+  .form-control {
+    font-size: 16px !important;
+  }
+
   html, body, .app-root {
     overflow-x: hidden;
     width: 100%;
@@ -995,7 +1010,7 @@ body {
   }
 
   .navbar {
-    padding: 0.65rem 1rem;
+    padding: 0.65rem 0.75rem;
   }
 
   .navbar-container {
@@ -1008,14 +1023,30 @@ body {
     justify-content: center;
   }
 
+  .institution-switcher {
+    align-self: center;
+    width: 100%;
+    max-width: 340px;
+    justify-content: center;
+  }
+
+  .institution-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.775rem;
+  }
+
+  .nav-actions,
   .navbar-actions {
     justify-content: center;
     flex-wrap: wrap;
     gap: 0.5rem;
+    width: 100%;
   }
 
   .hero-header {
-    padding: 1rem;
+    padding: 1rem 0.75rem;
   }
 
   .hero-content {
@@ -1030,14 +1061,30 @@ body {
   }
 
   .main-container {
-    padding: 0 0.75rem;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0 0.5rem;
     margin: 0.75rem auto;
     gap: 1rem;
+  }
+
+  .sidebar-panel,
+  .workspace-panel {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
   }
 
   .form-row {
     grid-template-columns: 1fr !important;
     gap: 0.75rem;
+  }
+
+  .sample-buttons {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
   }
 
   .preview-toolbar {
@@ -1051,23 +1098,57 @@ body {
     flex-wrap: wrap;
     justify-content: center;
     width: 100%;
+    gap: 0.4rem;
+  }
+
+  .preview-controls-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .nav-controls-cluster,
+  .zoom-controls-cluster {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .export-actions-group {
+    display: flex;
+    width: 100%;
+    gap: 0.5rem;
   }
 
   .btn-export {
-    width: 100%;
+    flex: 1;
+    min-width: 120px;
     justify-content: center;
   }
 
-  .preview-viewport {
-    padding: 0.75rem;
-    min-height: 380px;
+  .ai-quick-action-bar {
+    width: 100%;
     max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .preview-viewport {
+    padding: 0.5rem;
+    min-height: 340px;
+    max-width: 100%;
+    width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
   }
 
   .preview-sheet {
     max-width: 100% !important;
+    box-sizing: border-box;
   }
 
   .preview-sheet img {

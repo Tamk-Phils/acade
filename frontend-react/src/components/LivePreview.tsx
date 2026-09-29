@@ -218,85 +218,87 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
 
         {/* Center: Page Navigation & Zoom Controls (Only when in page preview mode) */}
         {activeTab === 'pages' && (
-          <div className="toolbar-group" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <div className="toolbar-group preview-controls-group">
             {/* Page Navigation */}
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-              disabled={!hasPages || currentPage === 0}
-              title="Previous Page"
-              style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
-            >
-              ◀ Prev
-            </button>
-            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-primary)', padding: '0 0.25rem', whiteSpace: 'nowrap' }}>
-              Page {hasPages ? currentPage + 1 : 0} of {previewPages.length}
-            </span>
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={() => setCurrentPage((p) => Math.min(previewPages.length - 1, p + 1))}
-              disabled={!hasPages || currentPage >= previewPages.length - 1}
-              title="Next Page"
-              style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
-            >
-              Next ▶
-            </button>
-
-            <span style={{ color: 'var(--color-border)', margin: '0 2px' }}>|</span>
+            <div className="nav-controls-cluster">
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                disabled={!hasPages || currentPage === 0}
+                title="Previous Page"
+                style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
+              >
+                ◀ Prev
+              </button>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-primary)', padding: '0 0.25rem', whiteSpace: 'nowrap' }}>
+                Page {hasPages ? currentPage + 1 : 0} of {previewPages.length}
+              </span>
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={() => setCurrentPage((p) => Math.min(previewPages.length - 1, p + 1))}
+                disabled={!hasPages || currentPage >= previewPages.length - 1}
+                title="Next Page"
+                style={{ fontWeight: 600, padding: '0.25rem 0.6rem' }}
+              >
+                Next ▶
+              </button>
+            </div>
 
             {/* Zoom Controls */}
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={handleZoomOut}
-              disabled={!hasPages}
-              title="Zoom Out"
-            >
-              -
-            </button>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '36px', textAlign: 'center' }}>
-              {zoom}%
-            </span>
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={handleZoomIn}
-              disabled={!hasPages}
-              title="Zoom In"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={handleZoomReset}
-              disabled={!hasPages}
-              title="Reset Zoom"
-            >
-              100%
-            </button>
+            <div className="zoom-controls-cluster">
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={handleZoomOut}
+                disabled={!hasPages}
+                title="Zoom Out"
+              >
+                -
+              </button>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, minWidth: '36px', textAlign: 'center' }}>
+                {zoom}%
+              </span>
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={handleZoomIn}
+                disabled={!hasPages}
+                title="Zoom In"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={handleZoomReset}
+                disabled={!hasPages}
+                title="Reset Zoom"
+              >
+                100%
+              </button>
 
-            {/* Full Screen Preview Button */}
-            <button
-              type="button"
-              className="btn-tool"
-              onClick={toggleFullscreen}
-              disabled={!hasPages}
-              title="Enter Fullscreen Preview"
-              style={{ fontWeight: 700, color: 'var(--color-primary)' }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-              </svg>
-              Full Screen
-            </button>
+              {/* Full Screen Preview Button */}
+              <button
+                type="button"
+                className="btn-tool"
+                onClick={toggleFullscreen}
+                disabled={!hasPages}
+                title="Enter Fullscreen Preview"
+                style={{ fontWeight: 700, color: 'var(--color-primary)' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+                Full Screen
+              </button>
+            </div>
           </div>
         )}
 
         {/* Right: Export Actions */}
-        <div className="toolbar-group">
+        <div className="toolbar-group export-actions-group">
           <button
             type="button"
             className="btn-export docx"
@@ -440,7 +442,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             <div
               className="preview-sheet"
               style={{
-                width: `${Math.round(720 * (zoom / 100))}px`
+                width: zoom === 100 ? '100%' : `${Math.round(720 * (zoom / 100))}px`,
+                maxWidth: zoom === 100 ? '720px' : 'none'
               }}
             >
               <img
