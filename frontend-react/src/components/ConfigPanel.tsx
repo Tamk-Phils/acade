@@ -59,13 +59,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   };
 
   const handleSupervisorChange = (index: number, val: string) => {
-    const updated = [...(metadata.supervisors || [''])];
+    const updated = [...(metadata.supervisors && metadata.supervisors.length > 0 ? metadata.supervisors : [''])];
     updated[index] = val;
     handleFieldChange('supervisors', updated);
   };
 
   const handleRankChange = (index: number, val: string) => {
-    const updated = [...(metadata.supervisor_ranks || [''])];
+    const updated = [...(metadata.supervisor_ranks && metadata.supervisor_ranks.length > 0 ? metadata.supervisor_ranks : ['Associate Professor'])];
     updated[index] = val;
     handleFieldChange('supervisor_ranks', updated);
   };
@@ -170,6 +170,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 });
               }}
             >
+              <option value="">-- Select Department (or auto-detected) --</option>
               {departments.map((dept: string) => (
                 <option key={dept} value={dept}>
                   {dept}
@@ -232,6 +233,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               value={metadata.degree_code}
               onChange={(e) => handleFieldChange('degree_code', e.target.value)}
             >
+              <option value="">-- Select Degree / Program --</option>
               <option value="BTech">BTech (Bachelor of Technology)</option>
               <option value="HND">HND (Higher National Diploma)</option>
               <option value="BSc">BSc (Bachelor of Science)</option>
@@ -250,6 +252,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           <textarea
             className="form-control"
             rows={2}
+            placeholder="Document Title (auto-detected on upload)"
             value={metadata.title}
             onChange={(e) => handleFieldChange('title', e.target.value)}
           />
@@ -263,6 +266,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               <input
                 type="text"
                 className="form-control"
+                placeholder="Candidate Full Name (auto-detected on upload)"
                 value={metadata.author}
                 onChange={(e) => handleFieldChange('author', e.target.value)}
               />
@@ -272,6 +276,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               <input
                 type="text"
                 className="form-control"
+                placeholder="Registration Number / Matricule (e.g. UBA24TECH01)"
                 value={metadata.reg_number}
                 onChange={(e) => handleFieldChange('reg_number', e.target.value)}
               />
@@ -375,12 +380,12 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               </button>
             </div>
 
-            {(metadata.supervisors || ['']).map((sup, idx) => (
+            {((metadata.supervisors && metadata.supervisors.length > 0) ? metadata.supervisors : ['']).map((sup, idx) => (
               <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: '0.4rem', marginBottom: '0.4rem', alignItems: 'center' }}>
                 <input
                   type="text"
                   className="form-control"
-                  placeholder="Supervisor Full Name"
+                  placeholder="Supervisor Full Name (auto-detected on upload)"
                   value={sup}
                   onChange={(e) => handleSupervisorChange(idx, e.target.value)}
                 />
@@ -420,6 +425,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               value={metadata.submission_month}
               onChange={(e) => handleFieldChange('submission_month', e.target.value)}
             >
+              <option value="">-- Select Month (or auto-detected) --</option>
               {['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'].map(m => (
                 <option key={m} value={m}>{m}</option>
               ))}
@@ -430,6 +436,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             <input
               type="text"
               className="form-control"
+              placeholder="e.g. 2026"
               value={metadata.submission_year}
               onChange={(e) => handleFieldChange('submission_year', e.target.value)}
             />

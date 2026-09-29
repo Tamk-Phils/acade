@@ -453,11 +453,10 @@ def build_cover_page(
             members = meta.group_members if meta.group_members else []
             if not members:
                 # Default group representative members when user toggles group mode
+                cand_name = meta.author if meta.author else "Candidate 1"
+                cand_mat = meta.reg_number if meta.reg_number else ""
                 members = [
-                    GroupMember(name=meta.author, matricule=meta.reg_number, participation="Lead / Coordinator", grade="____ / 20"),
-                    GroupMember(name="TANIFUM DONALD-HOPE NEBA", matricule="UBa23PH045", participation="System Architecture", grade="____ / 20"),
-                    GroupMember(name="BIH CLAUDIA LUM", matricule="UBa24EN102", participation="Frontend & Testing", grade="____ / 20"),
-                    GroupMember(name="NDIFOR KEVIN TITA", matricule="UBa24EN155", participation="Documentation", grade="____ / 20"),
+                    GroupMember(name=cand_name, matricule=cand_mat, participation="Lead / Coordinator", grade="____ / 20"),
                 ]
 
             if len(members) > 5:
@@ -723,15 +722,10 @@ def build_group_members_page(doc: docx.Document, meta: DocumentMetadata):
     """
     members = meta.group_members if meta.group_members else []
     if not members:
+        cand_name = meta.author if meta.author else "Candidate 1"
+        cand_mat = meta.reg_number if meta.reg_number else ""
         members = [
-            GroupMember(name=meta.author, matricule=meta.reg_number, participation="Lead / Coordinator", grade="____ / 20"),
-            GroupMember(name="TANIFUM DONALD-HOPE NEBA", matricule="UBa23PH045", participation="System Architecture", grade="____ / 20"),
-            GroupMember(name="BIH CLAUDIA LUM", matricule="UBa24EN102", participation="Frontend & Testing", grade="____ / 20"),
-            GroupMember(name="NDIFOR KEVIN TITA", matricule="UBa24EN155", participation="Documentation", grade="____ / 20"),
-            GroupMember(name="FORBAH BRIAN CHE", matricule="UBa24EN210", participation="Database & Cloud Services", grade="____ / 20"),
-            GroupMember(name="NGWA PRECIOUS SIRRI", matricule="UBa24EN289", participation="Literature & Verification", grade="____ / 20"),
-            GroupMember(name="FON DESMOND ACHA", matricule="UBa24EN312", participation="Statistical Evaluation", grade="____ / 20"),
-            GroupMember(name="MBIYDZENYUY KAREN", matricule="UBa24EN340", participation="Quality Assurance", grade="____ / 20"),
+            GroupMember(name=cand_name, matricule=cand_mat, participation="Lead / Coordinator", grade="____ / 20"),
         ]
 
     # Page Header
@@ -1157,8 +1151,8 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
         r_ct.font.size = Pt(12)
 
         # Signatures
-        sup_main = meta.supervisors[0] if meta.supervisors else "Pr. CHARLES FORBACHA"
-        sup_rank = meta.supervisor_ranks[0] if meta.supervisor_ranks else "Associate Professor"
+        sup_main = meta.supervisors[0] if (meta.supervisors and meta.supervisors[0]) else "The Academic Supervisor"
+        sup_rank = meta.supervisor_ranks[0] if (meta.supervisor_ranks and meta.supervisor_ranks[0]) else "Supervisor"
         
         sigs = [
             ("Supervisor", f"{sup_main} ({sup_rank})"),

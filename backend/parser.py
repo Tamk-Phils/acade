@@ -50,7 +50,7 @@ def extract_metadata_from_text_and_tables(text: str, tables_text: List[str] = No
             meta.title = t
 
     # Rule B: Check title table cell if available (common in UBa documents)
-    if (not meta.title or meta.title == "TITLE OF THE WORK") and tables_text:
+    if not meta.title and tables_text:
         for cell_txt in tables_text:
             cleaned = clean_title(cell_txt)
             if cleaned and len(cleaned) >= 15 and len(cleaned) <= 220:
@@ -58,7 +58,7 @@ def extract_metadata_from_text_and_tables(text: str, tables_text: List[str] = No
                 break
 
     # Rule C: Fallback to searching before purpose clause
-    if not meta.title or meta.title == "TITLE OF THE WORK":
+    if not meta.title:
         before_clause = re.search(r'([A-Z0-9\s:,\-]{15,220})\n+\s*(?:A Dissertation|An Internship Report|A Project|A Final Year Project|A Thesis|A Research Proposal)', text, re.IGNORECASE)
         if before_clause:
             lines = [l.strip() for l in before_clause.group(1).split('\n') if l.strip()]

@@ -12,33 +12,33 @@ class GroupMember(BaseModel):
     grade: Optional[str] = ""
 
 class DocumentMetadata(BaseModel):
-    title: str = "TITLE OF THE WORK"
-    author: str = "CANDIDATE FULL NAME"
-    reg_number: str = "UBaXXYYZZZ"
-    degree: str = "Bachelor of Science"
-    degree_code: str = "BSc"  # "BSc", "BTech", "HND", "MSc", "MTech", "MEng", "PhD"
-    option: str = "Computer Engineering"
-    department: str = "Computer Engineering"
-    faculty: str = "College of Technology"
-    faculty_code: str = "COLTECH"
-    motto: str = "Building capacities in innovative technology for development"
-    supervisors: List[str] = ["Pr. CHARLES FORBACHA"]
-    supervisor_ranks: List[str] = ["Associate Professor"]
-    hod_name: str = "Pr. Head of Department"
-    director_name: str = "Pr. Mathias Fru Fonteh"
-    director_title: str = "Director"
-    submission_month: str = "JUNE"
-    submission_year: str = "2026"
+    title: str = ""
+    author: str = ""
+    reg_number: str = ""
+    degree: str = ""
+    degree_code: str = ""  # "BSc", "BTech", "HND", "MSc", "MTech", "MEng", "PhD"
+    option: str = ""
+    department: str = ""
+    faculty: str = ""
+    faculty_code: str = ""
+    motto: str = ""
+    supervisors: List[str] = Field(default_factory=list)
+    supervisor_ranks: List[str] = Field(default_factory=list)
+    hod_name: str = ""
+    director_name: str = ""
+    director_title: str = ""
+    submission_month: str = ""
+    submission_year: str = ""
     host_company: Optional[str] = None
     field_supervisor: Optional[str] = None
-    course_code: Optional[str] = "CE401"
-    course_title: Optional[str] = "Software Engineering Principles"
-    lecturer: Optional[str] = "Dr. Lecturer Name"
-    academic_year: Optional[str] = "2025/2026"
+    course_code: Optional[str] = ""
+    course_title: Optional[str] = ""
+    lecturer: Optional[str] = ""
+    academic_year: Optional[str] = ""
     
     # Group assignment parameters
     is_group_assignment: bool = False
-    group_name: Optional[str] = "Group 1"
+    group_name: Optional[str] = ""
     group_members: List[GroupMember] = Field(default_factory=list)
     show_grading_column: bool = True
     # Custom instructions & non-standard formatting overrides

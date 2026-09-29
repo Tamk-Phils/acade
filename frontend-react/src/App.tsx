@@ -30,25 +30,25 @@ import {
 } from './types';
 
 const defaultMetadata: DocumentMetadata = {
-  title: 'DESIGN AND IMPLEMENTATION OF AN ENTERPRISE ACADEMIC REPOSITORY',
-  author: 'NJITAPON AHMED SAID ASSAN',
-  reg_number: 'UBA2SPP228',
-  degree: 'Bachelor of Technology',
-  degree_code: 'BTech',
-  option: 'Computer Engineering',
-  department: 'Computer Engineering',
-  faculty: 'COLLEGE OF TECHNOLOGY',
-  faculty_code: 'COLTECH',
-  motto: 'Building capacities in innovative technology for development',
-  supervisors: ['Pr. ONABID MATHIAS'],
-  supervisor_ranks: ['Professor'],
-  hod_name: 'Pr. Head of Department',
-  director_name: 'Pr. Mathias Fru Fonteh',
-  director_title: 'Director',
-  submission_month: 'JUNE',
-  submission_year: '2026',
+  title: '',
+  author: '',
+  reg_number: '',
+  degree: '',
+  degree_code: '',
+  option: '',
+  department: '',
+  faculty: '',
+  faculty_code: '',
+  motto: '',
+  supervisors: [],
+  supervisor_ranks: [],
+  hod_name: '',
+  director_name: '',
+  director_title: '',
+  submission_month: '',
+  submission_year: '',
   is_group_assignment: false,
-  group_name: 'Group 1',
+  group_name: '',
   group_members: [],
   show_grading_column: true,
   grading_column_title: 'Score / 20',
@@ -247,8 +247,8 @@ export const App: React.FC = () => {
     }
   };
 
-  // AI Assistant Document Mutation Handler
-  const handleApplyAIChanges = async (changes: Record<string, any>) => {
+  // AI-Driven Changes Application Handler
+  const handleApplyAIChanges = async (changes: Partial<DocumentMetadata> & { institution?: string; doc_type?: string; school_type?: string; header_mode?: string }) => {
     if (!changes) return;
 
     let updatedMetadata: DocumentMetadata = { ...metadata };
