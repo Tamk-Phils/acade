@@ -17,31 +17,55 @@ from typing import Dict, Any, List, Optional
 import httpx
 from dotenv import load_dotenv
 
+import threading
 from backend.academic_data import ALL_ESTABLISHMENTS, UNIVERSITIES, resolve_department_and_option
 
 load_dotenv()
 
+# Multi-AI Model Keys
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
 
-# ---------------------------------------------------------
-# Google Gemini Free Tier Integration
-# ---------------------------------------------------------
+def clean_stars(text: str) -> str:
+    """Completely strips all Markdown asterisks and stars (** or *) to ensure clean, human-readable prose."""
+    if not text:
+        return ""
+    # Strip double/triple asterisks: **word** -> word
+    text = re.sub(r'\*{2,3}(.*?)\*{2,3}', r'\1', text)
+    # Strip single asterisks: *word* -> word
+    text = re.sub(r'(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)', r'\1', text)
+    # Convert bullet asterisks to clean bullet symbol
+    text = re.sub(r'^\s*[\*\-]\s+', '• ', text, flags=re.MULTILINE)
+    # Remove any remaining lone asterisks
+    text = text.replace('*', '')
+    return text.strip()
+
 SYSTEM_PROMPT = """You are the AcadFormat Senior Academic Formatting Director and AI Advisor for The University of Bamenda (UBa) and Catholic University of Cameroon (CATUC) Bamenda.
 You think, advise, and speak with the warmth, precision, and authority of an experienced University Dean and Thesis Formatting Chairperson.
+You deeply understand natural language, free-form instructions, student questions, and voice-transcribed dictation.
 
-You understand spoken ideas, natural language instructions, and voice-transcribed dictation.
+CRITICAL INSTRUCTIONS ON FORMATTING YOUR OUTPUT:
+1. Do NOT use any Markdown asterisks or stars (** or *) in your response. Never write **word** or *word*.
+2. Write clean, natural, elegant text with normal punctuation. If you need emphasis, use UPPERCASE or clear wording.
+3. If providing lists, use simple bullet points starting with a hyphen (-) or dot (•), never asterisks.
 
 STATUTORY FORMATTING RULES YOU ENFORCE:
 1. Margins: Mandatory 4.0 cm (1.57 in) inside binding margin (to prevent binding clamps from eating text); 2.5 cm outside, top, bottom. Font: Times New Roman 12pt, 1.5 line spacing.
 2. Preliminary Pages Sequence: Cover Page -> Title Page (Page i, unnumbered) -> Copyright (ii) -> Declaration of Originality (iii) -> Certification of Corrections after Defense (iv, signed by Supervisor, HOD, Director/Dean) -> Acceptance of Dissertation (v, Examination Committee Chair) -> Abstract (vi, English, <=500 words) -> Résumé (vii, French) -> Dedication (viii) -> Acknowledgements (ix) -> Table of Contents -> Lists of Tables/Figures/Abbreviations.
-3. COLTECH Page 11 Template: Top center 'THE UNIVERSITY OF BAMENDA', 3-column table header ('THE COLLEGE OF TECHNOLOGY' | 'UBa Official Crest' | 'DEPARTMENT OF [ORIGIN]'), bold uppercase title with clean rectangular border box, purpose clause, candidate BY: Name & REG NUMBER, SUPERVISOR(S): with academic ranks (Pr. / Dr.), Month Year at bottom. Note: Option/Specialization (e.g. Information Technology and Cybersecurity) belongs to the purpose clause and option field, while Department (e.g. Computer Engineering) appears in the header.
-4. CATUC Bamenda: Motto 'Fides et Scientia', faculties (FBMS, SENG, FST, SHMS, FHSS, STANR, STHEO), matricule CATUC/XX/YYY, APA/IEEE reference standards.
-5. Assignments & Internships: Only cover page (no title page). Can have Table of Contents & Acknowledgements. If Group Assignment: <=5 members displayed on Cover Page; >5 members moved to dedicated Page 2 Evaluation & Marks Sheet with columns (No, Name, Matricule, Participation/Score).
+3. Institutions:
+   - HTTTC (Higher Technical Teacher Training College / ENSET Bambili): Technical teacher education, awards DIPET I, DIPET II, B.Tech, M.Tech.
+   - HTTC (Higher Teacher Training College / ENS Bambili): General secondary teacher education, awards DIPES I, DIPES II, Postgraduate Diploma in Education.
+   - COLTECH: College of Technology (BTech, MTech).
+   - CATUC Bamenda: Motto 'Fides et Scientia', faculties (FBMS, SENG, FST, SHMS, FHSS, STANR, STHEO).
+4. Custom Editing Instructions:
+   If the user requests custom non-standard formatting (e.g. Arial 11pt, 1.15 spacing, 2.5cm margins, unboxed title), capture these under custom_instructions and individual fields so the restructuring engine applies them.
 
 OUTPUT REQUIREMENTS:
-If the user's prompt requests ANY change to their document, cover page, or metadata (title, author, registration number, supervisor, co-supervisor, department, option/specialization, faculty, institution, document type, group members, header mode, dedication, abstract, acknowledgements), you MUST return a valid JSON object in this exact schema:
+If the user's prompt requests ANY change to their document, cover page, styling, or metadata (title, author, registration number, supervisor, department, option/specialization, faculty, institution, document type, group members, custom instructions, font, line spacing, margins, boxed/unboxed title), you MUST return a valid JSON object in this exact schema:
 {
-  "reply": "Your warm, natural, human-like conversational response explaining what you did and offering constructive advice",
+  "reply": "Your warm, natural, human-like conversational response explaining what you did and offering constructive advice (WITHOUT ANY ASTERISKS OR STARS)",
   "action_summary": "Brief 1-line summary of applied changes",
   "applied_changes": {
      "title": "optional string",
@@ -49,76 +73,277 @@ If the user's prompt requests ANY change to their document, cover page, or metad
      "reg_number": "optional string",
      "supervisors": ["optional list of names"],
      "supervisor_ranks": ["optional list of ranks"],
-     "hod_name": "optional string",
-     "director_name": "optional string",
-     "faculty": "optional string",
-     "faculty_code": "optional string",
      "department": "optional string",
      "option": "optional string",
-     "doc_type": "optional string",
+     "faculty": "optional string",
+     "faculty_code": "optional string",
      "school_type": "optional string",
      "institution": "uba or catuc",
-     "header_mode": "center_crest or dual_logo",
-     "is_group_assignment": true or false,
-     "group_members": [
-        {"name": "...", "matricule": "...", "participation": "", "grade": ""}
-     ]
+     "doc_type": "optional string",
+     "custom_instructions": "optional string describing user rules",
+     "font_family": "optional string (e.g. Arial)",
+     "font_size_pt": "optional float (e.g. 11.0)",
+     "line_spacing": "optional float (e.g. 1.15)",
+     "margin_left_cm": "optional float (e.g. 2.5)",
+     "box_title": "optional boolean"
   },
   "suggestions": ["Next step 1", "Next step 2", "Next step 3"]
 }
 
-If no change is requested (user is asking an academic question or advice), set applied_changes to null and action_summary to null, and provide a rich, detailed, articulate response.
+If no change is requested (the user is simply asking an academic question or advice), set applied_changes to null and action_summary to null, and provide a rich, detailed, articulate response.
 Respond ONLY with the JSON object.
 """
 
-def call_gemini_free_tier(message: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Calls Google Gemini 1.5 Flash Free Tier via official REST endpoint."""
-    if not GEMINI_API_KEY:
+def _extract_json_response(raw_text: str) -> Optional[Dict[str, Any]]:
+    """Helper to parse JSON from model output even if wrapped in markdown code blocks."""
+    if not raw_text:
         return None
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    
-    user_context = (
-        f"Institution: {context.get('institution', 'uba').upper()}\n"
-        f"Current School: {context.get('school_type', 'coltech')}\n"
-        f"Current Document Type: {context.get('doc_type', 'dissertation_bsc')}\n"
-        f"Current Metadata: {json.dumps(context.get('metadata', {}))}\n\n"
-        f"User Message: {message}"
-    )
-
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": SYSTEM_PROMPT},
-                    {"text": user_context}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.2
-        }
-    }
+    raw_text = raw_text.strip()
+    if raw_text.startswith("```json"):
+        raw_text = raw_text[7:]
+    if raw_text.startswith("```"):
+        raw_text = raw_text[3:]
+    if raw_text.endswith("```"):
+        raw_text = raw_text[:-3]
+    raw_text = raw_text.strip()
 
     try:
-        with httpx.Client(timeout=8.0) as client:
-            resp = client.post(url, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(raw_text)
-                return {
-                    "status": "success",
-                    "reply": parsed.get("reply", "Changes noted and applied."),
-                    "applied_changes": parsed.get("applied_changes"),
-                    "action_summary": parsed.get("action_summary"),
-                    "suggestions": parsed.get("suggestions", ["Check Table of Contents", "Review Cover Page", "Export Document"]),
-                    "engine": "gemini_free_tier"
-                }
-    except Exception as e:
-        print(f"[AcadFormat AI] Gemini API fallback: {e}")
+        return json.loads(raw_text)
+    except Exception:
+        # Search for first JSON object
+        match = re.search(r'(\{[\s\S]*\})', raw_text)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except Exception:
+                pass
     return None
+
+def call_groq_ai(system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
+    """Calls Groq ultra-fast LPU inference (GPT-OSS 120B / Qwen 27B)."""
+    if not GROQ_API_KEY:
+        return None
+    models = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+    for model in models:
+        try:
+            with httpx.Client(timeout=9.0) as client:
+                resp = client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {GROQ_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.2
+                    }
+                )
+                if resp.status_code == 200:
+                    raw_content = resp.json()["choices"][0]["message"]["content"]
+                    parsed = _extract_json_response(raw_content)
+                    if parsed:
+                        return {
+                            "status": "success",
+                            "reply": clean_stars(parsed.get("reply", "")),
+                            "applied_changes": parsed.get("applied_changes"),
+                            "action_summary": clean_stars(parsed.get("action_summary", "")),
+                            "suggestions": parsed.get("suggestions", ["Check Table of Contents", "Review Cover Page", "Export Document"]),
+                            "engine": f"Groq ({model})"
+                        }
+                elif resp.status_code in [429, 503]:
+                    continue
+        except Exception as e:
+            print(f"[AcadFormat AI] Groq ({model}) error: {e}")
+            continue
+    return None
+
+def call_openrouter_ai(system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
+    """Calls OpenRouter high-intelligence multi-model router."""
+    if not OPENROUTER_API_KEY:
+        return None
+    models = [
+        "meta-llama/llama-3.3-70b-instruct",
+        "deepseek/deepseek-chat",
+        "mistralai/mistral-small-24b-instruct-2501"
+    ]
+    for model in models:
+        try:
+            with httpx.Client(timeout=11.0) as client:
+                resp = client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://acadformat.com",
+                        "X-Title": "AcadFormat Academic AI"
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.2
+                    }
+                )
+                if resp.status_code == 200:
+                    raw_content = resp.json()["choices"][0]["message"]["content"]
+                    parsed = _extract_json_response(raw_content)
+                    if parsed:
+                        return {
+                            "status": "success",
+                            "reply": clean_stars(parsed.get("reply", "")),
+                            "applied_changes": parsed.get("applied_changes"),
+                            "action_summary": clean_stars(parsed.get("action_summary", "")),
+                            "suggestions": parsed.get("suggestions", ["Check Table of Contents", "Review Cover Page", "Export Document"]),
+                            "engine": f"OpenRouter ({model.split('/')[-1]})"
+                        }
+                elif resp.status_code in [429, 503]:
+                    continue
+        except Exception as e:
+            print(f"[AcadFormat AI] OpenRouter ({model}) error: {e}")
+            continue
+    return None
+
+def call_deepseek_ai(system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
+    """Calls DeepSeek reasoning and natural language model."""
+    if DEEPSEEK_API_KEY:
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(
+                    "https://api.deepseek.com/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.2
+                    }
+                )
+                if resp.status_code == 200:
+                    raw_content = resp.json()["choices"][0]["message"]["content"]
+                    parsed = _extract_json_response(raw_content)
+                    if parsed:
+                        return {
+                            "status": "success",
+                            "reply": clean_stars(parsed.get("reply", "")),
+                            "applied_changes": parsed.get("applied_changes"),
+                            "action_summary": clean_stars(parsed.get("action_summary", "")),
+                            "suggestions": parsed.get("suggestions", ["Check Table of Contents", "Review Cover Page", "Export Document"]),
+                            "engine": "DeepSeek Direct (deepseek-chat)"
+                        }
+        except Exception as e:
+            print(f"[AcadFormat AI] DeepSeek Direct error: {e}")
+
+    # Fallback to DeepSeek via OpenRouter
+    if OPENROUTER_API_KEY:
+        try:
+            with httpx.Client(timeout=11.0) as client:
+                resp = client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://acadformat.com",
+                        "X-Title": "AcadFormat Academic AI"
+                    },
+                    json={
+                        "model": "deepseek/deepseek-chat",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.2
+                    }
+                )
+                if resp.status_code == 200:
+                    raw_content = resp.json()["choices"][0]["message"]["content"]
+                    parsed = _extract_json_response(raw_content)
+                    if parsed:
+                        return {
+                            "status": "success",
+                            "reply": clean_stars(parsed.get("reply", "")),
+                            "applied_changes": parsed.get("applied_changes"),
+                            "action_summary": clean_stars(parsed.get("action_summary", "")),
+                            "suggestions": parsed.get("suggestions", ["Check Table of Contents", "Review Cover Page", "Export Document"]),
+                            "engine": "DeepSeek (via OpenRouter)"
+                        }
+        except Exception as e:
+            print(f"[AcadFormat AI] DeepSeek via OpenRouter error: {e}")
+    return None
+
+def call_gemini_api(system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
+    """Calls Google Gemini API."""
+    if not GEMINI_API_KEY:
+        return None
+    models = ["gemini-flash-latest", "gemini-pro-latest"]
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": system_prompt},
+                        {"text": user_prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.2
+            }
+        }
+        try:
+            with httpx.Client(timeout=9.0) as client:
+                resp = client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed = _extract_json_response(raw_text)
+                    if parsed:
+                        return {
+                            "status": "success",
+                            "reply": clean_stars(parsed.get("reply", "")),
+                            "applied_changes": parsed.get("applied_changes"),
+                            "action_summary": clean_stars(parsed.get("action_summary", "")),
+                            "suggestions": parsed.get("suggestions", ["Check Table of Contents", "Review Cover Page", "Export Document"]),
+                            "engine": f"Google Gemini ({model})"
+                        }
+        except Exception as e:
+            print(f"[AcadFormat AI] Gemini API ({model}) error: {e}")
+    return None
+
+# Provider Rotation Pool for High-Volume Concurrency & Zero Restrictions
+_ROTATION_PROVIDERS = [
+    ("Groq Ultra-Fast", call_groq_ai),
+    ("OpenRouter LLaMA 3.3 70B", call_openrouter_ai),
+    ("DeepSeek Intelligence", call_deepseek_ai),
+    ("Google Gemini", call_gemini_api),
+]
+
+_rotation_counter = 0
+_rotation_lock = threading.Lock()
+
+def get_rotating_providers():
+    """Returns providers starting at round-robin counter and wrapping around."""
+    with _rotation_lock:
+        global _rotation_counter
+        start_idx = _rotation_counter
+        _rotation_counter = (_rotation_counter + 1) % len(_ROTATION_PROVIDERS)
+    return [_ROTATION_PROVIDERS[(start_idx + i) % len(_ROTATION_PROVIDERS)] for i in range(len(_ROTATION_PROVIDERS))]
 
 
 # ---------------------------------------------------------
@@ -152,6 +377,7 @@ def parse_and_generate_local_nlp(
 
     applied = {}
     actions = []
+    action_summary = None
 
     # 1. Title Extraction
     title_match = re.search(
@@ -528,11 +754,15 @@ def parse_and_generate_local_nlp(
             "What is the inside binding margin?"
         ]
 
+    # Clean all stars from reply and action_summary before returning
+    clean_reply = clean_stars(reply)
+    clean_action = clean_stars(action_summary) if action_summary else None
+
     return {
         "status": "success",
-        "reply": reply,
-        "applied_changes": None,
-        "action_summary": None,
+        "reply": clean_reply,
+        "applied_changes": applied if actions else None,
+        "action_summary": clean_action,
         "suggestions": suggestions,
         "engine": "local_nlp_dialogue_engine"
     }
@@ -547,8 +777,10 @@ def generate_chat_response(
 ) -> Dict[str, Any]:
     """
     Primary routing handler for AcadFormat AI.
-    1. Attempts Google Gemini 1.5 Flash (Free Tier) if key is provided.
-    2. Falls back to ultra-fast, zero-dependency local NLU action engine.
+    Rotates dynamically across Groq (GPT-OSS/Qwen), OpenRouter (LLaMA 3.3 70B),
+    DeepSeek, and Google Gemini to distribute load, prevent rate-limiting restrictions,
+    and guarantee natural language comprehension.
+    Falls back to local NLU engine if all external networks are unreachable.
     """
     context = {
         "institution": institution,
@@ -557,13 +789,26 @@ def generate_chat_response(
         "metadata": metadata or {}
     }
 
-    # 1. Try Gemini Free Tier if key is configured
-    if GEMINI_API_KEY:
-        gemini_res = call_gemini_free_tier(message, context)
-        if gemini_res:
-            return gemini_res
+    user_context = (
+        f"Institution: {context.get('institution', 'uba').upper()}\n"
+        f"Current School: {context.get('school_type', 'coltech')}\n"
+        f"Current Document Type: {context.get('doc_type', 'dissertation_bsc')}\n"
+        f"Current Metadata: {json.dumps(context.get('metadata', {}))}\n\n"
+        f"User Message: {message}"
+    )
 
-    # 2. Local Intelligent NLU & Dialogue Engine (Sub-15ms latency, 100% free)
+    # 1. Rotate through high-capability AI providers in round-robin order
+    rotating_pool = get_rotating_providers()
+    for provider_name, provider_fn in rotating_pool:
+        try:
+            res = provider_fn(SYSTEM_PROMPT, user_context)
+            if res and res.get("status") == "success" and res.get("reply"):
+                return res
+        except Exception as prov_err:
+            print(f"[AcadFormat AI] Provider '{provider_name}' error during rotation: {prov_err}")
+            continue
+
+    # 2. Local Intelligent NLU & Dialogue Engine (Sub-15ms latency, 100% free offline fallback)
     return parse_and_generate_local_nlp(
         message=message,
         institution=institution,

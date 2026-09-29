@@ -14,6 +14,53 @@ interface AIChatDrawerProps {
   onClearPrefilledPrompt?: () => void;
 }
 
+const renderCleanMessage = (text: string) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return lines.map((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return <div key={idx} style={{ height: '0.35rem' }} />;
+    }
+    const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*');
+    const content = isBullet ? trimmed.replace(/^[\•\-\*]\s*/, '') : line;
+
+    // Parse bold segments (**text**) into <strong> while stripping all asterisks/stars
+    const parts: React.ReactNode[] = [];
+    const regex = /\*\*(.*?)\*\*|\*(.*?)\*/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(content.substring(lastIndex, match.index).replace(/\*/g, ''));
+      }
+      if (match[1] !== undefined) {
+        parts.push(<strong key={match.index} style={{ fontWeight: 600 }}>{match[1].replace(/\*/g, '')}</strong>);
+      } else if (match[2] !== undefined) {
+        parts.push(<em key={match.index}>{match[2].replace(/\*/g, '')}</em>);
+      }
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < content.length) {
+      parts.push(content.substring(lastIndex).replace(/\*/g, ''));
+    }
+
+    if (isBullet) {
+      return (
+        <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', margin: '2px 0' }}>
+          <span style={{ color: '#38BDF8', fontSize: '0.8rem', lineHeight: '1.45' }}>•</span>
+          <span style={{ flex: 1, lineHeight: '1.45' }}>{parts}</span>
+        </div>
+      );
+    }
+    return (
+      <div key={idx} style={{ lineHeight: '1.45', margin: '2px 0' }}>
+        {parts}
+      </div>
+    );
+  });
+};
+
 export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
   isOpen,
   onClose,
@@ -29,9 +76,9 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
     {
       id: 'init',
       sender: 'assistant',
-      text: `Hello! I am the **AcadFormat AI Academic Director** for **${
+      text: `Hello! I am the AcadFormat AI Academic Director for ${
         institution === 'catuc' ? 'Catholic University of Cameroon (CATUC)' : 'The University of Bamenda (UBa)'
-      }**.\n\nYou can **type or speak** using the 🎙️ microphone to give formatting instructions. Ask me to change your title, update supervisors, configure group assignment rosters, or explain binding rules.`,
+      }.\n\nYou can type or speak using the 🎙️ microphone to give formatting instructions. Ask me to change your title, update supervisors, configure group assignment rosters, or explain binding rules.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       suggestions: [
         'Set supervisor to Prof. Mathias Onabid',
@@ -300,7 +347,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         <div className="ai-drawer-messages">
           {messages.map((m) => (
             <div key={m.id} className={`chat-bubble ${m.sender}`}>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+              <div className="chat-msg-body">{renderCleanMessage(m.text)}</div>
 
               {/* Visual Card when Changes were Executed on Manuscript */}
               {m.action_summary && (
@@ -319,7 +366,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
                     <span>⚡ Applied to Manuscript</span>
                   </div>
                   <div style={{ color: '#E2E8F0', fontSize: '0.75rem', lineHeight: 1.4 }}>
-                    {m.action_summary}
+                    {renderCleanMessage(m.action_summary)}
                   </div>
                 </div>
               )}
@@ -341,12 +388,20 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
               <div
                 style={{
                   fontSize: '0.65rem',
-                  opacity: 0.6,
-                  textAlign: 'right',
-                  marginTop: '0.35rem'
+                  opacity: 0.75,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginTop: '0.4rem',
+                  gap: '0.5rem'
                 }}
               >
-                {m.timestamp}
+                {m.engine ? (
+                  <span style={{ color: '#38BDF8', fontSize: '0.65rem', fontWeight: 500 }}>
+                    ⚡ {m.engine}
+                  </span>
+                ) : <span />}
+                <span>{m.timestamp}</span>
               </div>
             </div>
           ))}
