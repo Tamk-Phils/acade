@@ -307,39 +307,71 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         </div>
 
         {/* Live Voice Recording Status Banner */}
+        {/* Live Voice Recording Status Banner */}
         {isListening && (
           <div
             style={{
-              padding: '0.4rem 0.8rem',
+              padding: '0.5rem 0.85rem',
               background: '#991B1B',
               color: '#FEE2E2',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               fontSize: '0.75rem',
-              borderBottom: '1px solid #DC2626'
+              borderBottom: '1px solid #DC2626',
+              gap: '0.5rem'
             }}
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: 1, minWidth: 0 }}>
               <span style={{ animation: 'pulse 1s infinite', fontSize: '0.9rem' }}>🔴</span>
-              Listening... Speak your ideas or formatting instructions
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {input.trim() ? `"${input}"` : 'Listening... Speak your formatting instructions'}
+              </span>
             </span>
-            <button
-              type="button"
-              onClick={toggleListening}
-              style={{
-                background: '#FFFFFF',
-                color: '#991B1B',
-                border: 'none',
-                padding: '0.15rem 0.5rem',
-                borderRadius: '4px',
-                fontSize: '0.7rem',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              Stop & Keep
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  toggleListening();
+                  if (input.trim()) {
+                    handleSendMessage(input);
+                  }
+                }}
+                disabled={!input.trim()}
+                style={{
+                  background: input.trim() ? '#10B981' : '#64748B',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '4px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  cursor: input.trim() ? 'pointer' : 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.2rem'
+                }}
+                title="Stop recording and execute instruction immediately"
+              >
+                ⚡ Execute Now
+              </button>
+              <button
+                type="button"
+                onClick={toggleListening}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '0.2rem 0.45rem',
+                  borderRadius: '4px',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer'
+                }}
+                title="Keep transcribed text in box to edit"
+              >
+                Review
+              </button>
+            </div>
           </div>
         )}
 
@@ -354,16 +386,36 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
                 <div
                   style={{
                     marginTop: '0.5rem',
-                    padding: '0.5rem 0.75rem',
+                    padding: '0.6rem 0.8rem',
                     background: 'rgba(16, 185, 129, 0.1)',
-                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
                     borderRadius: '6px',
                     fontSize: '0.8rem',
                     color: '#34D399'
                   }}
                 >
-                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.2rem' }}>
-                    <span>⚡ Applied to Manuscript</span>
+                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>⚡ Applied to Manuscript</span>
+                    <button
+                      type="button"
+                      onClick={() => onClose()}
+                      style={{
+                        background: '#10B981',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '4px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                      title="Close drawer to inspect the updated document"
+                    >
+                      Cross-Check in Document 👁️
+                    </button>
                   </div>
                   <div style={{ color: '#E2E8F0', fontSize: '0.75rem', lineHeight: 1.4 }}>
                     {renderCleanMessage(m.action_summary)}

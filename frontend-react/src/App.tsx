@@ -271,6 +271,14 @@ export const App: React.FC = () => {
     if (changes.group_members) updatedMetadata.group_members = changes.group_members;
     if (changes.show_grading_column !== undefined) updatedMetadata.show_grading_column = changes.show_grading_column;
     if (changes.custom_instructions !== undefined) updatedMetadata.custom_instructions = changes.custom_instructions;
+    if (changes.font_family) updatedMetadata.font_family = changes.font_family;
+    if (changes.font_size_pt) updatedMetadata.font_size_pt = changes.font_size_pt;
+    if (changes.line_spacing) updatedMetadata.line_spacing = changes.line_spacing;
+    if (changes.margin_left_cm) updatedMetadata.margin_left_cm = changes.margin_left_cm;
+    if (changes.margin_right_cm) updatedMetadata.margin_right_cm = changes.margin_right_cm;
+    if (changes.margin_top_cm) updatedMetadata.margin_top_cm = changes.margin_top_cm;
+    if (changes.margin_bottom_cm) updatedMetadata.margin_bottom_cm = changes.margin_bottom_cm;
+    if (changes.box_title !== undefined) updatedMetadata.box_title = changes.box_title;
 
     if (changes.institution && changes.institution !== institution) {
       newInstitution = changes.institution as 'uba' | 'catuc';
@@ -292,22 +300,46 @@ export const App: React.FC = () => {
     setMetadata(updatedMetadata);
 
     // If an active manuscript is loaded, trigger restructuring with updated metadata immediately
-    if (currentDocToken) {
+    if (currentDocToken || currentFile || currentSampleType) {
       setReformatting(true);
       try {
         const resp = await reformatDocument(
-          currentDocToken,
+          currentDocToken || 'direct',
           newDocType,
           newSchoolType,
           newHeaderMode,
-          updatedMetadata
+          updatedMetadata,
+          currentFile,
+          currentSampleType
         );
-        setPreviewPages(resp.preview_pages || resp.preview_urls || []);
+        if (resp.token) setCurrentDocToken(resp.token);
+        const pages = resp.preview_pages || resp.preview_urls || [];
+        if (pages.length > 0) {
+          setPreviewPages(pages);
+        }
         if (resp.audit) setAudit(resp.audit);
       } catch (err: any) {
         console.error('Auto-reformat error after AI changes:', err);
       } finally {
         setReformatting(false);
+      }
+    } else {
+      // If no manuscript loaded yet, auto-load default sample with the updated metadata so user can cross-check
+      try {
+        const sampleType = newDocType.includes('assignment') ? 'assignment' : newDocType.includes('internship') ? 'internship' : 'coltech';
+        setCurrentSampleType(sampleType);
+        const resp = await loadSample(sampleType);
+        setCurrentDocToken(resp.token);
+        setCurrentFilename(resp.filename);
+        if (resp.audit?.metadata) {
+          setMetadata((prev) => ({ ...prev, ...resp.audit.metadata, ...updatedMetadata }));
+        }
+        const pages = resp.preview_pages || resp.preview_urls || [];
+        if (pages.length > 0) {
+          setPreviewPages(pages);
+        }
+      } catch (err) {
+        console.error('Auto-load sample failed:', err);
       }
     }
   };
