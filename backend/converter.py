@@ -30,39 +30,45 @@ def convert_docx_to_pdf(docx_path: str, output_dir: str) -> str:
 
     abs_out_dir = os.path.abspath(output_dir)
     os.makedirs(abs_out_dir, exist_ok=True)
-    lo_profile_dir = os.path.join(abs_out_dir, "lo_profile")
+    lo_profile_dir = os.path.join(abs_out_dir, f"lo_profile_{os.getpid()}")
     os.makedirs(lo_profile_dir, exist_ok=True)
 
     base_name = os.path.splitext(os.path.basename(docx_path))[0]
-    pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
+    pdf_path = os.path.join(abs_out_dir, f"{base_name}.pdf")
     if os.path.exists(pdf_path):
         try:
             os.remove(pdf_path)
         except Exception:
             pass
 
-    cmd = [
-        lo_bin,
-        f"-env:UserInstallation=file://{lo_profile_dir}",
-        "--headless",
-        "--convert-to",
-        "pdf:writer_pdf_Export",
-        "--outdir",
-        abs_out_dir,
-        os.path.abspath(docx_path)
-    ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
-    if result.returncode != 0:
-        raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
-    
-    if not os.path.exists(pdf_path):
-        # Look for any pdf generated
-        pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
-        if pdfs:
-            pdf_path = pdfs[0]
-        else:
-            raise FileNotFoundError(f"PDF output not found for {docx_path}")
-    return pdf_path
+    try:
+        cmd = [
+            lo_bin,
+            f"-env:UserInstallation=file://{lo_profile_dir}",
+            "--headless",
+            "--convert-to",
+            "pdf:writer_pdf_Export",
+            "--outdir",
+            abs_out_dir,
+            os.path.abspath(docx_path)
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
+        
+        if not os.path.exists(pdf_path):
+            # Look for any pdf generated
+            pdfs = glob.glob(os.path.join(abs_out_dir, "*.pdf"))
+            if pdfs:
+                pdf_path = pdfs[0]
+            else:
+                raise FileNotFoundError(f"PDF output not found for {docx_path}")
+        return pdf_path
+    finally:
+        try:
+            shutil.rmtree(lo_profile_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def generate_page_previews(pdf_path: str, preview_dir: str, dpi: int = 120, max_pages: int = 100) -> List[str]:
@@ -135,7 +141,13 @@ def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: Image
     return lines
 
 
-def generate_pure_python_previews(docx_path: str, preview_dir: str, dpi: int = 120, max_pages: int = 100) -> List[str]:
+def generate_pure_python_previews(
+    docx_path: str,
+    preview_dir: str,
+    dpi: int = 120,
+    max_pages: int = 100,
+    metadata: Optional[Any] = None
+) -> List[str]:
     """
     High-fidelity pure-Python preview generator using Pillow.
     Renders official Senate A4 pages (Cover, Title, Preliminaries, Chapters)
@@ -151,10 +163,15 @@ def generate_pure_python_previews(docx_path: str, preview_dir: str, dpi: int = 1
         print(f"[AcadFormat Converter] Error reading docx for preview: {e}")
         return []
 
-    # Partition paragraphs into logical pages by page break runs
+    # Partition paragraphs into logical pages by page break runs and pageBreakBefore
     pages_paragraphs: List[List[Any]] = []
     curr_page: List[Any] = []
     for p in doc.paragraphs:
+        p_has_break_before = bool(p.paragraph_format.page_break_before or p._p.xpath('.//w:pPr/w:pageBreakBefore'))
+        if p_has_break_before and curr_page:
+            pages_paragraphs.append(curr_page)
+            curr_page = []
+
         curr_page.append(p)
         has_break = any("w:br" in r._r.xml and "page" in r._r.xml for r in p.runs)
         if has_break:
@@ -194,126 +211,103 @@ def generate_pure_python_previews(docx_path: str, preview_dir: str, dpi: int = 1
 
     body_start_page = 8
 
-    # Extract metadata clues from first 2 pages
-    extracted_title = "TITLE OF THE WORK"
-    extracted_author = "CANDIDATE NAME"
-    extracted_reg = "UBa23PH000"
-    extracted_supervisor = "SUPERVISOR NAME"
-    extracted_date = "JUNE 2026"
+    rendered_pages = []
+    page_counter = 1
 
-    for pg in pages_paragraphs[:2]:
-        for p in pg:
-            txt = p.text.strip()
-            if not txt:
-                continue
-            if len(txt) > 20 and ("ORCHESTRATOR" in txt.upper() or "DESIGN" in txt.upper() or "STUDY" in txt.upper() or "INVESTIGATION" in txt.upper() or "SYSTEM" in txt.upper()):
-                extracted_title = txt
-            elif "REGISTRATION NUMBER" in txt.upper() or "REG NO" in txt.upper():
-                extracted_reg = txt
-            elif "SUPERVISOR" in txt.upper():
-                lines = [l.strip() for l in txt.split("\n") if l.strip()]
-                if len(lines) > 1:
-                    extracted_supervisor = lines[1]
-            elif any(m in txt.upper() for m in ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"]):
-                if len(txt) < 30:
-                    extracted_date = txt
+    def start_new_page():
+        nonlocal page_counter
+        p_img = Image.new("RGB", (W, H), "white")
+        p_draw = ImageDraw.Draw(p_img)
+        p_draw.rectangle([(0, 0), (W-1, H-1)], outline="#CBD5E1", width=1)
+        return p_img, p_draw, 100
+
+    current_img, draw, curr_y = start_new_page()
+
+    def finish_page(img_to_save, p_num):
+        # Draw bottom-centered page footer
+        if p_num > 2:
+            if p_num < body_start_page:
+                romans = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii", "xiii", "xiv", "xv", "xvi", "xvii", "xviii"]
+                r_idx = p_num - 1
+                r_text = romans[r_idx] if r_idx < len(romans) else str(r_idx)
+                draw_f = ImageDraw.Draw(img_to_save)
+                draw_f.text((W // 2, 1335), r_text, font=f_footer, fill="#475569", anchor="mm")
+            else:
+                arabic_num = str(p_num - body_start_page + 1)
+                draw_f = ImageDraw.Draw(img_to_save)
+                draw_f.text((W // 2, 1335), arabic_num, font=f_footer, fill="#475569", anchor="mm")
+
+        out_file = os.path.join(preview_dir, f"page-{p_num:02d}.png")
+        img_to_save.save(out_file, "PNG", optimize=True)
+        rendered_pages.append(out_file)
 
     for idx, p_list in enumerate(pages_paragraphs):
-        page_num = idx + 1
-        img = Image.new("RGB", (W, H), "white")
-        draw = ImageDraw.Draw(img)
+        is_cover_or_title = (idx < 2)
 
-        # Outer subtle page border
-        draw.rectangle([(0, 0), (W-1, H-1)], outline="#CBD5E1", width=1)
+        if idx > 0 and curr_y > 100:
+            finish_page(current_img, page_counter)
+            page_counter += 1
+            if max_pages and page_counter > max_pages:
+                break
+            current_img, draw, curr_y = start_new_page()
 
-        if page_num in (1, 2):
-            # -------------------------------------------------------------
-            # COVER PAGE (1) & TITLE PAGE (2)
-            # -------------------------------------------------------------
-            if logo_img:
-                img.paste(logo_img, ((W - logo_img.width) // 2, 70), mask=logo_img)
+        if is_cover_or_title and logo_img:
+            current_img.paste(logo_img, ((W - logo_img.width) // 2, 60), mask=logo_img)
+            curr_y = 175
 
-            draw.text((left_margin, 70), "THE UNIVERSITY OF BAMENDA\nCOLLEGE OF TECHNOLOGY", font=f_bold, fill="#1E3A8A", align="left")
-            draw.text((right_margin, 70), "REPUBLIC OF CAMEROON\nDEPARTMENT OF COMPUTER ENG.", font=f_bold, fill="#1E3A8A", anchor="ra", align="right")
+        for p in p_list:
+            txt = p.text.strip()
+            if not txt:
+                curr_y += 10
+                continue
 
-            # Boxed Title (Single-line rectangular box)
-            title_lines = _wrap_text(extracted_title.upper(), f_title, max_text_w - 40, draw)
-            box_h = max(100, len(title_lines) * 26 + 40)
-            box_y = 280
-            draw.rectangle([(left_margin, box_y), (right_margin, box_y + box_h)], outline="black", width=2)
-            ty = box_y + 20
-            for tl in title_lines:
-                draw.text((W // 2, ty), tl, font=f_title, fill="black", anchor="mm")
-                ty += 26
+            p_style = getattr(p.style, "name", "Normal")
+            is_heading = "Heading" in p_style or (txt.isupper() and len(txt) < 80)
+            p_font = f_h1 if ("Heading 1" in p_style or (txt.isupper() and len(txt) < 50)) else (f_h2 if "Heading" in p_style else f_normal)
 
-            # Purpose clause
-            curr_y = box_y + box_h + 40
-            degree_str = "Bachelor of Science (B.Sc)" if page_num == 1 else "Bachelor of Science (B.Sc) in Computer Engineering"
-            clause = f"A Dissertation Submitted to the Department of Computer Engineering in Partial Fulfillment of the Requirements for the Award of the Degree of {degree_str}"
-            for cl in _wrap_text(clause, f_normal, max_text_w, draw):
-                draw.text((W // 2, curr_y), cl, font=f_normal, fill="#1F2937", anchor="mm")
-                curr_y += 22
+            # Boxed title check on cover/title page
+            is_boxed_title = is_cover_or_title and (
+                ("ORCHESTRATOR" in txt.upper() or "DESIGN" in txt.upper() or "STUDY" in txt.upper() or "SYSTEM" in txt.upper() or "INVESTIGATION" in txt.upper() or len(txt) > 25)
+                and not any(k in txt.upper() for k in ["THE UNIVERSITY", "L'UNIVERSITE", "COLLEGE", "FACULTY", "DEPARTMENT", "DISSERTATION", "SUBMITTED", "PRESENTED", "SUPERVISED", "SUPERVISOR", "REGISTRATION", "DATE", "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"])
+            )
 
-            # Candidate & Supervisor
-            curr_y += 50
-            draw.text((W // 2, curr_y), "PRESENTED BY:", font=f_bold, fill="black", anchor="mm")
-            curr_y += 24
-            draw.text((W // 2, curr_y), extracted_author.upper(), font=f_bold, fill="black", anchor="mm")
-            curr_y += 20
-            draw.text((W // 2, curr_y), f"REGISTRATION NUMBER: {extracted_reg}", font=f_normal, fill="black", anchor="mm")
+            if is_boxed_title:
+                t_lines = _wrap_text(txt.upper(), f_title, max_text_w - 40, draw)
+                b_h = max(80, len(t_lines) * 26 + 30)
+                if curr_y + b_h > 1280 and curr_y > 150:
+                    finish_page(current_img, page_counter)
+                    page_counter += 1
+                    current_img, draw, curr_y = start_new_page()
+                draw.rectangle([(left_margin, curr_y), (right_margin, curr_y + b_h)], outline="black", width=2)
+                ty = curr_y + 16
+                for tl in t_lines:
+                    draw.text((W // 2, ty), tl, font=f_title, fill="black", anchor="mm")
+                    ty += 26
+                curr_y += b_h + 30
+                continue
 
-            curr_y += 45
-            draw.text((W // 2, curr_y), "SUPERVISED BY:", font=f_bold, fill="black", anchor="mm")
-            curr_y += 24
-            draw.text((W // 2, curr_y), extracted_supervisor, font=f_bold, fill="black", anchor="mm")
-            curr_y += 20
-            draw.text((W // 2, curr_y), "Rank: Associate Professor", font=f_normal, fill="#4B5563", anchor="mm")
+            wrapped = _wrap_text(txt, p_font, max_text_w, draw)
+            line_h = 24 if is_heading else 20
+            p_needed_h = len(wrapped) * line_h + (12 if is_heading else 8)
 
-            # Anchored submission date at bottom
-            draw.text((W // 2, 1310), extracted_date, font=f_bold, fill="black", anchor="mm")
-
-        else:
-            # -------------------------------------------------------------
-            # PRELIMINARY PAGES & CHAPTER BODY PAGES
-            # -------------------------------------------------------------
-            curr_y = 100
-            for p in p_list:
-                txt = p.text.strip()
-                if not txt:
-                    continue
-                p_style = getattr(p.style, "name", "Normal")
-                is_heading = "Heading" in p_style or (txt.isupper() and len(txt) < 80)
-
-                p_font = f_h1 if ("Heading 1" in p_style or (txt.isupper() and len(txt) < 50)) else (f_h2 if "Heading" in p_style else f_normal)
-                align = "center" if (txt.isupper() and len(txt) < 60) else "left"
-                wrapped = _wrap_text(txt, p_font, max_text_w, draw)
-
-                for line in wrapped:
-                    if curr_y > 1280:
-                        break
-                    if align == "center":
-                        draw.text((W // 2, curr_y), line, font=p_font, fill="black", anchor="ma")
-                    else:
-                        draw.text((left_margin, curr_y), line, font=p_font, fill="#1E293B")
-                    curr_y += 22 if is_heading else 20
-                curr_y += 12 if is_heading else 6
-                if curr_y > 1280:
+            if curr_y + p_needed_h > 1280 and curr_y > 150:
+                finish_page(current_img, page_counter)
+                page_counter += 1
+                if max_pages and page_counter > max_pages:
                     break
+                current_img, draw, curr_y = start_new_page()
 
-            # Bottom-centered page footer
-            if page_num < body_start_page:
-                # Lowercase Roman numerals starting at ii for preliminary page 3
-                romans = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"]
-                r_idx = page_num - 1
-                r_text = romans[r_idx] if r_idx < len(romans) else str(r_idx)
-                draw.text((W // 2, 1335), r_text, font=f_footer, fill="#475569", anchor="mm")
-            else:
-                # Arabic numerals starting at 1 for Chapter 1
-                arabic_num = str(page_num - body_start_page + 1)
-                draw.text((W // 2, 1335), arabic_num, font=f_footer, fill="#475569", anchor="mm")
+            align = "center" if (is_cover_or_title or (txt.isupper() and len(txt) < 60)) else "left"
+            for line in wrapped:
+                if align == "center":
+                    draw.text((W // 2, curr_y), line, font=p_font, fill="black", anchor="ma")
+                else:
+                    draw.text((left_margin, curr_y), line, font=p_font, fill="#1E293B")
+                curr_y += line_h
+            curr_y += 10 if is_heading else 6
 
-        out_file = os.path.join(preview_dir, f"page-{page_num:02d}.png")
-        img.save(out_file, "PNG", optimize=True)
+    if curr_y > 100:
+        finish_page(current_img, page_counter)
 
     return sorted(glob.glob(os.path.join(preview_dir, "page-*.png")))
 
@@ -329,6 +323,25 @@ def image_file_to_base64_data_url(file_path: str) -> str:
         return f"data:{mime};base64,{encoded}"
     except Exception:
         return ""
+
+
+def images_to_pdf(image_paths: List[str], output_pdf_path: str) -> bool:
+    """Assembles a list of image files into a single multi-page PDF document."""
+    try:
+        valid_imgs = []
+        for p in image_paths:
+            if os.path.exists(p):
+                try:
+                    valid_imgs.append(Image.open(p).convert("RGB"))
+                except Exception:
+                    pass
+        if not valid_imgs:
+            return False
+        valid_imgs[0].save(output_pdf_path, "PDF", resolution=100.0, save_all=True, append_images=valid_imgs[1:])
+        return os.path.exists(output_pdf_path)
+    except Exception as e:
+        print(f"[AcadFormat Converter] Error assembling images to PDF: {e}")
+        return False
 
 
 def generate_document_previews(
@@ -352,18 +365,23 @@ def generate_document_previews(
     if is_libreoffice_available() and is_pdftoppm_available():
         try:
             out_pdf_path = convert_docx_to_pdf(docx_path, output_dir)
-            preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=dpi, max_pages=max_pages)
-            if preview_pages:
-                preview_data_urls = [image_file_to_base64_data_url(p) for p in preview_pages]
-                return out_pdf_path, preview_pages, preview_data_urls
+            if out_pdf_path and os.path.exists(out_pdf_path):
+                preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=dpi, max_pages=max_pages)
+                if preview_pages:
+                    preview_data_urls = [image_file_to_base64_data_url(p) for p in preview_pages]
+                    return out_pdf_path, preview_pages, preview_data_urls
         except Exception as lo_err:
             print(f"[AcadFormat Converter] LibreOffice conversion skipped: {lo_err}")
 
     # Fallback to pure-Python generator
     try:
-        preview_pages = generate_pure_python_previews(docx_path, preview_dir, dpi=dpi, max_pages=max_pages)
+        preview_pages = generate_pure_python_previews(docx_path, preview_dir, dpi=dpi, max_pages=max_pages, metadata=metadata)
         if preview_pages:
             preview_data_urls = [image_file_to_base64_data_url(p) for p in preview_pages]
+            # Assemble multi-page PDF from previews so PDF export is always guaranteed
+            candidate_pdf = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(docx_path))[0]}.pdf")
+            if images_to_pdf(preview_pages, candidate_pdf):
+                out_pdf_path = candidate_pdf
     except Exception as py_err:
         print(f"[AcadFormat Converter] Pure-Python preview generator error: {py_err}")
 

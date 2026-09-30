@@ -36,7 +36,7 @@ from backend.chatbot import generate_chat_response
 from backend.parser import parse_document
 from backend.auditor import audit_document
 from backend.restructurer import restructure_document
-from backend.converter import convert_docx_to_pdf, generate_page_previews, generate_document_previews
+from backend.converter import convert_docx_to_pdf, generate_page_previews, generate_document_previews, images_to_pdf
 from backend.database import (
     save_document_record, save_reformat_record, is_supabase_configured, list_recent_documents,
     create_user, authenticate_user, create_session, get_user_by_session, check_download_eligibility,
@@ -735,9 +735,34 @@ async def download_file(
     elif fmt == "pdf":
         path = session.get("formatted_pdf")
         if not path or not os.path.exists(path):
+            docx_path = session.get("formatted_docx")
+            if docx_path and os.path.exists(docx_path):
+                session_dir = session.get("session_dir") or os.path.dirname(docx_path)
+                preview_dir = os.path.join(session_dir, "previews")
+                meta = session.get("parsed").metadata if session.get("parsed") else None
+                try:
+                    gen_pdf, gen_pages, _ = generate_document_previews(
+                        docx_path, session_dir, preview_dir, dpi=120, max_pages=100, metadata=meta
+                    )
+                    if gen_pdf and os.path.exists(gen_pdf):
+                        path = gen_pdf
+                        session["formatted_pdf"] = gen_pdf
+                    if gen_pages:
+                        session["preview_pages"] = gen_pages
+                except Exception as e:
+                    print(f"[AcadFormat] Error generating PDF during download: {e}")
+
+            if (not path or not os.path.exists(path)) and session.get("preview_pages"):
+                session_dir = session.get("session_dir") or os.path.dirname(session.get("formatted_docx", ""))
+                cand_pdf = os.path.join(session_dir, "formatted.pdf")
+                if images_to_pdf(session["preview_pages"], cand_pdf):
+                    path = cand_pdf
+                    session["formatted_pdf"] = cand_pdf
+
+        if not path or not os.path.exists(path):
             raise HTTPException(
                 status_code=404,
-                detail="PDF export requires LibreOffice on the server. Please download the DOCX format, or deploy the backend with Docker/LibreOffice."
+                detail="PDF export could not be generated. Please download the DOCX format, or deploy the backend with Docker/LibreOffice."
             )
         return FileResponse(path, filename=f"{prefix}_Official.pdf", media_type="application/pdf")
     else:
@@ -951,6 +976,32 @@ async def download_direct_endpoint(
 
     school = school_type.upper()
     prefix = f"UBa_{school}_{doc_type.capitalize()}"
+
+    if fmt == "pdf":
+        temp_preview_dir = os.path.join(temp_dir, "previews")
+        pdf_path = None
+        preview_pages = []
+        try:
+            pdf_path, preview_pages, _ = generate_document_previews(
+                temp_out, temp_dir, temp_preview_dir, dpi=120, max_pages=100, metadata=meta
+            )
+        except Exception as e:
+            print(f"[AcadFormat] Error generating PDF in direct download: {e}")
+
+        if (not pdf_path or not os.path.exists(pdf_path)) and preview_pages:
+            cand_pdf = os.path.join(temp_dir, "formatted.pdf")
+            if images_to_pdf(preview_pages, cand_pdf):
+                pdf_path = cand_pdf
+
+        if pdf_path and os.path.exists(pdf_path):
+            return FileResponse(
+                pdf_path,
+                filename=f"{prefix}_Official.pdf",
+                media_type="application/pdf"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to generate PDF for direct download.")
+
     return FileResponse(
         temp_out,
         filename=f"{prefix}_Official.docx",

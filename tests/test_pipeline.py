@@ -492,6 +492,141 @@ class TestUBaPipeline(unittest.TestCase):
         self.assertIsNotNone(resp_reject["applied_changes"])
         self.assertFalse(resp_reject["applied_changes"].get("apply_proposed_figure_labels"))
 
+    def test_dedication_not_italic(self):
+        """Verifies dedication text is formatted upright (italic = False)."""
+        import docx
+        from backend.parser import ParsedDocument
+        from backend.models import DocumentMetadata, ReformatRequest
+        from backend.restructurer import restructure_document
+
+        meta = DocumentMetadata(
+            title="A Comprehensive Test",
+            author="Test Candidate",
+            reg_number="UBa24TEST01",
+            faculty="College of Technology",
+            faculty_code="coltech",
+            department="Computer Engineering"
+        )
+        parsed = ParsedDocument()
+        parsed.raw_text = "1.1 Background of Study\nThis is the introductory text of the research."
+        parsed.paragraphs = [
+            {"text": "1.1 Background of Study", "is_heading": True, "level": 2},
+            {"text": "This is the introductory text of the research.", "is_heading": False}
+        ]
+        parsed.metadata = meta
+
+        for doc_t in ["dissertation_bsc", "internship"]:
+            req = ReformatRequest(doc_type=doc_t, school_type="coltech", metadata=meta)
+            out_file = os.path.join(OUT_DIR, f"test_dedication_{doc_t}.docx")
+            restructure_document(parsed, req, out_file)
+            self.assertTrue(os.path.exists(out_file))
+
+            doc = docx.Document(out_file)
+            found_ded = False
+            for i, p in enumerate(doc.paragraphs):
+                if p.text.strip() == "DEDICATION":
+                    found_ded = True
+                    # The next paragraph is the dedication body text
+                    ded_body = doc.paragraphs[i+1]
+                    for r in ded_body.runs:
+                        self.assertFalse(r.font.italic, f"Dedication run must not be italic in {doc_t}")
+                    break
+            self.assertTrue(found_ded, f"DEDICATION section must exist in {doc_t}")
+
+    def test_no_duplicate_introduction_heading(self):
+        """Verifies that redundant duplicate INTRODUCTION headings are eliminated."""
+        import docx
+        from backend.parser import ParsedDocument
+        from backend.models import DocumentMetadata, ReformatRequest
+        from backend.restructurer import restructure_document
+
+        meta = DocumentMetadata(
+            title="A Test On Security",
+            author="Security Candidate",
+            reg_number="UBa24SEC01",
+            faculty="College of Technology",
+            faculty_code="coltech",
+            department="Computer Engineering"
+        )
+        # Source document has explicit Chapter 1, followed immediately by redundant Introduction and 1.1 Introduction
+        parsed = ParsedDocument()
+        parsed.raw_text = "CHAPTER 1: INTRODUCTION\nINTRODUCTION\n1.1 INTRODUCTION\n1.1 Background of the Study\nThis research explores security."
+        parsed.paragraphs = [
+            {"text": "CHAPTER 1: INTRODUCTION", "is_heading": True, "level": 1},
+            {"text": "INTRODUCTION", "is_heading": True, "level": 1},
+            {"text": "1.1 INTRODUCTION", "is_heading": True, "level": 2},
+            {"text": "1.1 Background of the Study", "is_heading": True, "level": 2},
+            {"text": "This research explores security.", "is_heading": False}
+        ]
+        parsed.metadata = meta
+
+        req = ReformatRequest(doc_type="dissertation_bsc", school_type="coltech", metadata=meta)
+        out_file = os.path.join(OUT_DIR, "test_dedup_intro.docx")
+        restructure_document(parsed, req, out_file)
+        self.assertTrue(os.path.exists(out_file))
+
+        doc = docx.Document(out_file)
+        intro_headings = [
+            p.text.strip() for p in doc.paragraphs
+            if "INTRODUCTION" in p.text.upper() and ("CHAPTER 1" in p.text.upper() or len(p.text.strip()) < 50)
+            and not p.text.strip().endswith("\t1") # Exclude TOC
+        ]
+        # Must only have exactly ONE Chapter 1 Introduction heading
+        self.assertEqual(len(intro_headings), 1, f"Expected 1 Introduction heading, got: {intro_headings}")
+        self.assertEqual(intro_headings[0], "CHAPTER 1\nINTRODUCTION")
+
+    def test_pdf_export_and_download(self):
+        """Verifies PDF generation and direct PDF download endpoints."""
+        import datetime
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        client = TestClient(app)
+
+        # 1. Register test user with active free trial
+        unique_user = f"pdftest_{datetime.datetime.now().timestamp()}"
+        reg_res = client.post("/api/auth/signup", json={
+            "full_name": "PDF Test User",
+            "username": unique_user,
+            "email": f"{unique_user}@univ.cm",
+            "password": "Password123!",
+            "privacy_accepted": True,
+            "device_id": "pdf_test_device"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+        auth_token = reg_res.json()["session_token"]
+        headers = {
+            "Authorization": f"Bearer {auth_token}",
+            "X-Session-Token": auth_token,
+            "X-Device-Id": "pdf_test_device"
+        }
+
+        # 2. Test sample load with PDF preview generation
+        res_sample = client.get("/api/sample/coltech_dissertation")
+        self.assertEqual(res_sample.status_code, 200)
+        token = res_sample.json()["token"]
+
+        # 3. Test PDF download endpoint
+        res_pdf = client.get(f"/api/download/{token}/pdf", headers=headers)
+        self.assertEqual(res_pdf.status_code, 200)
+        self.assertEqual(res_pdf.headers["content-type"], "application/pdf")
+        self.assertGreater(len(res_pdf.content), 1000)
+
+        # 4. Test direct PDF download
+        res_direct = client.post(
+            "/api/download-direct",
+            data={
+                "sample_type": "coltech_dissertation",
+                "doc_type": "dissertation_bsc",
+                "school_type": "coltech",
+                "header_mode": "center_crest",
+                "fmt": "pdf"
+            },
+            headers=headers
+        )
+        self.assertEqual(res_direct.status_code, 200)
+        self.assertEqual(res_direct.headers["content-type"], "application/pdf")
+        self.assertGreater(len(res_direct.content), 1000)
+
 if __name__ == "__main__":
     unittest.main()
 

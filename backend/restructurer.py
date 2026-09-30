@@ -21,6 +21,11 @@ ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 UBA_LOGO_PATH = os.path.join(ASSETS_DIR, "uba_logo.png")
 COLTECH_LOGO_PATH = os.path.join(ASSETS_DIR, "coltech_logo.png")
 
+INTRO_HEADING_PATTERN = re.compile(
+    r'^(?:(?:1(?:\.[01])?\.?\s*)?(?:GENERAL\s+)?INTRODUCTION|CHAPTER\s+1\s*[:\-–—]?\s*(?:GENERAL\s+)?INTRODUCTION)\s*[:.\-]?$',
+    re.IGNORECASE
+)
+
 class CustomFormattingRules:
     """Holds parsed custom formatting rules that deviate from standard Senate guidelines."""
     def __init__(self):
@@ -980,7 +985,7 @@ def build_internship_prelims(doc: docx.Document, meta: DocumentMetadata, parsed:
     r_dtx = p_ded_t.add_run("This work is dedicated to my family and mentors whose unwavering encouragement and moral guidance have supported my academic and professional development.")
     r_dtx.font.name = "Times New Roman"
     r_dtx.font.size = Pt(12)
-    r_dtx.font.italic = True
+    r_dtx.font.italic = False
 
     doc.add_page_break()
 
@@ -1205,7 +1210,7 @@ def build_dissertation_dedication_and_ack(doc: docx.Document, meta: DocumentMeta
     r_dtx = p_ded_t.add_run("This work is dedicated to Almighty God, my family, and mentors whose constant prayers, sacrifices, and unwavering encouragement have guided and inspired this academic achievement.")
     r_dtx.font.name = "Times New Roman"
     r_dtx.font.size = Pt(12)
-    r_dtx.font.italic = True
+    r_dtx.font.italic = False
 
     doc.add_page_break()
 
@@ -2237,6 +2242,9 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         if not ch_sub:
                             ch_sub = get_standard_chapter_title(explicit_ch_num, req.doc_type)
 
+                        if explicit_ch_num == 1 and next_raw_t and INTRO_HEADING_PATTERN.match(next_raw_t.strip()):
+                            skip_next_elem = True
+
                         p_elem = doc.add_paragraph()
                         if explicit_ch_num > 1:
                             p_elem.paragraph_format.page_break_before = True
@@ -2246,6 +2254,17 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         in_references = False
                         prev_raw_t = raw_t
                         continue
+
+                    # Standalone Introduction heading deduplication (prevents extra INTRODUCTION on first page)
+                    if INTRO_HEADING_PATTERN.match(raw_t.strip()):
+                        if current_chapter >= 1:
+                            continue
+                        elif current_chapter == 0 and req.doc_type != "assignment" and not in_references:
+                            p_elem = doc.add_paragraph()
+                            format_p(p_elem, "CHAPTER 1\nINTRODUCTION", is_chapter=True)
+                            current_chapter = 1
+                            prev_raw_t = raw_t
+                            continue
 
                     # Standalone conclusion heading
                     concl_match = re.match(r'^(?:CONCLUSION|CONCLUSIONS)\b(?:\s*[:\-–—,\s])*(.*)$', raw_t, re.IGNORECASE)
@@ -2345,6 +2364,9 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     if not ch_sub:
                         ch_sub = get_standard_chapter_title(explicit_ch_num, req.doc_type)
 
+                    if explicit_ch_num == 1 and next_p_text and INTRO_HEADING_PATTERN.match(next_p_text.strip()):
+                        skip_next_p = True
+
                     p_elem = doc.add_paragraph()
                     if explicit_ch_num > 1:
                         p_elem.paragraph_format.page_break_before = True
@@ -2353,6 +2375,16 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     current_chapter = explicit_ch_num
                     in_references = False
                     continue
+
+                # Standalone Introduction heading deduplication (prevents extra INTRODUCTION on first page)
+                if INTRO_HEADING_PATTERN.match(raw_t.strip()):
+                    if current_chapter >= 1:
+                        continue
+                    elif current_chapter == 0 and req.doc_type != "assignment" and not in_references:
+                        p_elem = doc.add_paragraph()
+                        format_p(p_elem, "CHAPTER 1\nINTRODUCTION", is_chapter=True)
+                        current_chapter = 1
+                        continue
 
                 concl_match = re.match(r'^(?:CONCLUSION|CONCLUSIONS)\b(?:\s*[:\-–—,\s])*(.*)$', raw_t, re.IGNORECASE)
                 if concl_match and current_chapter < 5 and req.doc_type != "assignment" and not in_references:
