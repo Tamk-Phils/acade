@@ -177,7 +177,7 @@ def generate_pure_python_previews(
     docx_path: str,
     preview_dir: str,
     dpi: int = 120,
-    max_pages: int = 14,
+    max_pages: int = 100,
     metadata: Optional[Any] = None
 ) -> Tuple[List[str], List[str]]:
     """
@@ -398,20 +398,35 @@ def generate_document_previews(
     output_dir: str,
     preview_dir: str,
     dpi: int = 120,
-    max_pages: int = 14,
+    max_pages: int = 100,
     metadata: Optional[Any] = None
 ) -> Tuple[Optional[str], List[str], List[str]]:
     """
     Primary preview orchestrator:
-    Generates pure-Python page previews instantly with Base64 data URLs for zero-request browser rendering.
-    Optionally generates official PDF via LibreOffice if available.
+    Generates high-fidelity page previews for ALL pages of the document (up to max_pages=100).
+    When LibreOffice and pdftoppm are installed, converts to PDF and extracts exact full-fidelity
+    vector-rendered page images with tables, figures, fonts, and headers.
+    Falls back gracefully to high-speed pure-Python Pillow rendering if needed.
     Returns: (pdf_path, preview_page_file_paths, preview_data_urls).
     """
     out_pdf_path = None
     preview_files: List[str] = []
     preview_data_urls: List[str] = []
 
-    # Generate pure-Python previews (ultra-fast, zero-binary dependency, ~0.6s)
+    # Priority 1: High-fidelity LibreOffice + pdftoppm conversion (renders all pages, real tables & figures)
+    if is_libreoffice_available() and is_pdftoppm_available():
+        try:
+            out_pdf_path = convert_docx_to_pdf(docx_path, output_dir)
+            if out_pdf_path and os.path.exists(out_pdf_path):
+                all_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=dpi)
+                target_pages = all_pages[:max_pages] if max_pages else all_pages
+                data_urls = [image_file_to_base64_data_url(p) for p in target_pages]
+                if target_pages:
+                    return out_pdf_path, target_pages, data_urls
+        except Exception as lo_err:
+            print(f"[AcadFormat Converter] LibreOffice/pdftoppm conversion fallback notice: {lo_err}")
+
+    # Priority 2: Pure-Python Pillow preview fallback (fast, zero external binary dependency)
     try:
         preview_files, preview_data_urls = generate_pure_python_previews(
             docx_path, preview_dir, dpi=dpi, max_pages=max_pages, metadata=metadata
@@ -419,13 +434,14 @@ def generate_document_previews(
     except Exception as py_err:
         print(f"[AcadFormat Converter] Pure-Python preview generator error: {py_err}")
 
-    # Optionally attempt headless LibreOffice for PDF export if installed
-    if is_libreoffice_available():
+    # Optionally attempt headless LibreOffice if PDF wasn't generated yet
+    if not out_pdf_path and is_libreoffice_available():
         try:
             out_pdf_path = convert_docx_to_pdf(docx_path, output_dir)
         except Exception as lo_err:
             print(f"[AcadFormat Converter] LibreOffice background conversion skipped: {lo_err}")
 
     return out_pdf_path, preview_files, preview_data_urls
+
 
 

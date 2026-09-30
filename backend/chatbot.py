@@ -26,16 +26,10 @@ load_dotenv()
 # High-Performance Thread Pool for Sub-Second Cloud Fallback
 _fast_ai_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="acadformat_ai")
 
-import codecs
-
-# Multi-AI Model Keys (with serverless fallback tokens)
-_DEFAULT_GROQ = codecs.decode("tfx_yUOrP8IiMq0rA4m7gnI1JTqlo3SLpcdsGevWPLlstVTpWJIORtoe", "rot_13")
-_DEFAULT_OR = codecs.decode("fx-be-i1-09132or95q99pp59rrr929or2q2np70q243qn9200o472o6o5n94q54s570q4n53", "rot_13")
-_DEFAULT_DS = codecs.decode("fx-35nn5s36o81440no85n13o6o7nq5r223", "rot_13")
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or _DEFAULT_GROQ
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or _DEFAULT_OR
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip() or _DEFAULT_DS
+# Multi-AI Model Keys (configured via environment variables or .env)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
 
 def clean_stars(text: str) -> str:

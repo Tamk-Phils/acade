@@ -462,14 +462,14 @@ async def audit_endpoint(
             restructure_document(parsed, req, out_docx_path)
             target_preview_docx = out_docx_path if os.path.exists(out_docx_path) else upload_path
             out_pdf_path, preview_pages, preview_data_urls = generate_document_previews(
-                target_preview_docx, session_dir, preview_dir, dpi=120, max_pages=14, metadata=parsed.metadata
+                target_preview_docx, session_dir, preview_dir, dpi=120, max_pages=100, metadata=parsed.metadata
             )
         except Exception as gen_err:
             print(f"[AcadFormat] Notice: Initial preview generation on upload fallback: {gen_err}")
             try:
                 if file_ext == ".docx" and os.path.exists(upload_path):
                     _, preview_pages, preview_data_urls = generate_document_previews(
-                        upload_path, session_dir, preview_dir, dpi=120, max_pages=14, metadata=parsed.metadata
+                        upload_path, session_dir, preview_dir, dpi=120, max_pages=100, metadata=parsed.metadata
                     )
             except Exception:
                 pass
@@ -616,7 +616,7 @@ async def reformat_endpoint(
 
         # 2. Generate PDF and page previews (pure-Python + optional LibreOffice)
         out_pdf_path, preview_pages, preview_data_urls = generate_document_previews(
-            out_docx_path, session_dir, preview_dir, dpi=120, max_pages=14, metadata=meta
+            out_docx_path, session_dir, preview_dir, dpi=120, max_pages=100, metadata=meta
         )
 
         session["formatted_docx"] = out_docx_path
@@ -810,7 +810,7 @@ async def load_sample(sample_type: str):
     try:
         restructure_document(parsed, req, out_docx_path)
         out_pdf_path, preview_pages, preview_data_urls = generate_document_previews(
-            out_docx_path, session_dir, preview_dir, dpi=120, max_pages=14, metadata=parsed.metadata
+            out_docx_path, session_dir, preview_dir, dpi=120, max_pages=100, metadata=parsed.metadata
         )
     except Exception as gen_err:
         print(f"[AcadFormat] Notice: Sample preview generation skipped: {gen_err}")

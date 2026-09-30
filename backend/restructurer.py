@@ -4,6 +4,7 @@ Generates compliant DOCX manuscripts conforming to official Senate and Establish
 """
 import os
 import re
+import io
 import copy
 from typing import List, Dict, Any, Optional
 import docx
@@ -1353,122 +1354,41 @@ def build_assignment_acknowledgements(doc: docx.Document, meta: DocumentMetadata
     doc.add_page_break()
 
 
-def build_table_of_contents(doc: docx.Document, parsed: ParsedDocument, doc_type: str = "dissertation_bsc", body_paras: Optional[List[Dict[str, Any]]] = None):
+def build_table_of_contents(
+    doc: docx.Document,
+    parsed: ParsedDocument,
+    doc_type: str = "dissertation_bsc",
+    body_paras: Optional[List[Dict[str, Any]]] = None,
+    custom_rules: Optional[CustomFormattingRules] = None
+):
     """Builds a formatted, dynamically accurate Table of Contents with dot leaders and aligned pages."""
+    rules = custom_rules or CustomFormattingRules()
     p_h = doc.add_paragraph()
     p_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_h.paragraph_format.space_before = Pt(20)
     p_h.paragraph_format.space_after = Pt(24)
     r_h = p_h.add_run("TABLE OF CONTENTS")
-    r_h.font.name = "Times New Roman"
+    r_h.font.name = rules.font_name
     r_h.font.size = Pt(14)
     r_h.font.bold = True
 
     toc_items = []
-    
+    tables_present = bool(getattr(parsed, "tables_count", 0) > 0 or getattr(parsed, "extracted_tables", None))
+    figures_present = bool(getattr(parsed, "figures_count", 0) > 0)
+
+    # 1. Dynamic Preliminaries with accurate lower-Roman pagination
     if doc_type == "assignment":
         toc_items = [
             ("PRELIMINARY PAGES", "", 0, True),
             ("Acknowledgements", "ii", 1, False),
-            ("ASSIGNMENT TASKS & QUESTIONS", "1", 0, True),
+            ("Table of Contents", "iii", 1, False),
         ]
-        task_found = False
-        if body_paras:
-            cur_p = 1
-            w_count = 0
-            for bp in body_paras:
-                txt = bp.get("text", "").strip()
-                w_count += len(txt.split())
-                is_task = bool(re.match(r'^(?:QUESTION|TASK|EXERCISE|PROBLEM|PART|SECTION)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', txt, re.IGNORECASE))
-                is_h = bp.get("is_heading", False) and len(txt) < 80 and not any(k in txt.upper() for k in ["REPUBLIC", "UNIVERSITY", "TABLE OF CONTENTS", "ACKNOWLEDGEMENTS"])
-                if is_task or (is_h and bp.get("level", 1) <= 2):
-                    task_found = True
-                    clean_lbl = txt[:60]
-                    toc_items.append((clean_lbl, str(cur_p), 1, False))
-                if w_count > 320:
-                    cur_p += max(1, w_count // 320)
-                    w_count = w_count % 320
-        if not task_found:
-            toc_items.extend([
-                ("Task 1: System Requirements & Theoretical Analysis", "1", 1, False),
-                ("Task 2: Architectural Design & Implementation", "3", 1, False),
-                ("Task 3: Verification, Testing & Discussion of Results", "6", 1, False),
-                ("Conclusion & Summary", "8", 1, False),
-            ])
-        toc_items.append(("REFERENCES", str(cur_p if (body_paras and task_found) else 9), 0, True))
-
-    elif doc_type == "proposal":
-        toc_items = [
-            ("PRELIMINARY PAGES", "", 0, True),
-            ("Declaration of Originality of Proposal", "ii", 1, False),
-            ("Abstract", "iii", 1, False),
-            ("Résumé", "iv", 1, False),
-            ("Table of Contents", "v", 1, False),
-            ("List of Abbreviations", "vi", 1, False),
-            ("List of Tables", "vii", 1, False),
-            ("List of Figures", "viii", 1, False),
-        ]
-        sections_found = False
-        if body_paras:
-            cur_p = 1
-            w_count = 0
-            cur_ch = 0
-            for bp in body_paras:
-                txt = bp.get("text", "").strip()
-                w_count += len(txt.split())
-                ch_m = re.match(r'^(?:CHAPTER|CHAPITRE)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-–]\s*|\s+)(.*)$', txt, re.IGNORECASE)
-                sec_m = re.match(r'^([1-3])\.\d+\s+(.*)$', txt)
-                is_ref = txt.upper() in ["REFERENCES", "BIBLIOGRAPHY"]
-                if ch_m:
-                    sections_found = True
-                    num_str = ch_m.group(1).upper()
-                    roman_map = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5}
-                    ch_num = roman_map.get(num_str, int(num_str) if num_str.isdigit() else 1)
-                    if ch_num > 1 and ch_num > cur_ch:
-                        cur_p += 1
-                        w_count = 0
-                    cur_ch = ch_num
-                    sub = ch_m.group(2).strip()
-                    toc_items.append((f"CHAPTER {ch_num}: {sub}".upper(), str(cur_p), 0, True))
-                elif sec_m:
-                    sec_ch = int(sec_m.group(1))
-                    if sec_ch > cur_ch:
-                        if cur_ch > 0:
-                            cur_p += 1
-                            w_count = 0
-                        cur_ch = sec_ch
-                        ch_names = {1: "INTRODUCTION", 2: "LITERATURE REVIEW", 3: "PROPOSED RESEARCH METHODOLOGY"}
-                        toc_items.append((f"CHAPTER {sec_ch}: {ch_names.get(sec_ch, '')}", str(cur_p), 0, True))
-                    if bp.get("level", 2) <= 2 or re.match(r'^\d+\.\d+\s', txt):
-                        sections_found = True
-                        toc_items.append((txt[:60], str(cur_p), 1, False))
-                elif is_ref:
-                    cur_p += 1
-                    w_count = 0
-                    toc_items.append(("REFERENCES", str(cur_p), 0, True))
-                if w_count > 320:
-                    cur_p += max(1, w_count // 320)
-                    w_count = w_count % 320
-        if not sections_found:
-            toc_items.extend([
-                ("CHAPTER 1: INTRODUCTION", "1", 0, True),
-                ("1.1 Background of the Study", "1", 1, False),
-                ("1.2 Description of the Research Problem", "2", 1, False),
-                ("1.3 Research Questions and Objectives", "2", 1, False),
-                ("1.4 Rationale (Significance and Motivation)", "3", 1, False),
-                ("1.5 Scope and Delimitations", "3", 1, False),
-                ("CHAPTER 2: LITERATURE REVIEW", "5", 0, True),
-                ("2.1 Conceptual and Theoretical Framework", "5", 1, False),
-                ("2.2 Review of State of the Art and Approaches", "5", 1, False),
-                ("2.3 Summary and Research Gaps Identified", "6", 1, False),
-                ("CHAPTER 3: PROPOSED RESEARCH METHODOLOGY", "7", 0, True),
-                ("3.1 Research Design & Architecture Overview", "7", 1, False),
-                ("3.2 Data Collection, Datasets & Tools", "8", 1, False),
-                ("3.3 Model Development & Evaluation Metrics", "8", 1, False),
-                ("3.4 Ethical Considerations & Indicative Timeline", "9", 1, False),
-                ("REFERENCES", "10", 0, True),
-                ("APPENDICES", "12", 0, True),
-            ])
+        if tables_present:
+            toc_items.append(("List of Tables", "iv", 1, False))
+        if figures_present:
+            f_num = "v" if tables_present else "iv"
+            toc_items.append(("List of Figures", f_num, 1, False))
+        toc_items.append(("ASSIGNMENT TASKS & QUESTIONS", "1", 0, True))
 
     elif doc_type == "internship":
         toc_items = [
@@ -1478,32 +1398,35 @@ def build_table_of_contents(doc: docx.Document, parsed: ParsedDocument, doc_type
             ("Dedication & Acknowledgements", "iv", 1, False),
             ("Executive Summary", "v", 1, False),
             ("Table of Contents", "vi", 1, False),
-            ("List of Abbreviations & Acronyms", "vii", 1, False),
-            ("List of Tables", "viii", 1, False),
-            ("List of Figures", "ix", 1, False),
-            ("CHAPTER 1: INTRODUCTION", "1", 0, True),
-            ("1.1 Background of Internship", "1", 1, False),
-            ("1.2 Objectives of Internship", "3", 1, False),
-            ("1.3 Significance of Internship", "4", 1, False),
-            ("1.4 Organization of Internship", "6", 1, False),
-            ("1.5 Definition of Terms", "8", 1, False),
-            ("CHAPTER 2: OVERVIEW OF THE HOST ORGANIZATION", "10", 0, True),
-            ("2.1 Brief History and Evolution", "10", 1, False),
-            ("2.2 Organizational Structure and Governance", "13", 1, False),
-            ("2.3 Products and Services Offered", "16", 1, False),
-            ("CHAPTER 3: INTERNSHIP ACTIVITIES", "19", 0, True),
-            ("3.1 Core Tasks & Departmental Activities", "19", 1, False),
-            ("3.2 Challenges & Difficulties Encountered", "25", 1, False),
-            ("CHAPTER 4: SITUATIONAL & CRITICAL APPRAISAL", "28", 0, True),
-            ("4.1 SWOT Analysis of the Enterprise", "28", 1, False),
-            ("4.2 Assessment of the Internship (Lessons Learnt)", "32", 1, False),
-            ("CHAPTER 5: CONCLUSION AND RECOMMENDATIONS", "35", 0, True),
-            ("5.1 Summary of Experience", "35", 1, False),
-            ("5.2 Conclusion", "36", 1, False),
-            ("5.3 Actionable Recommendations", "37", 1, False),
-            ("LIST OF REFERENCES", "40", 0, True),
-            ("APPENDICES", "42", 0, True),
         ]
+        next_roman_idx = 7
+        romans_map = {7: "vii", 8: "viii", 9: "ix", 10: "x", 11: "xi"}
+        if tables_present:
+            toc_items.append(("List of Tables", romans_map.get(next_roman_idx, "vii"), 1, False))
+            next_roman_idx += 1
+        if figures_present:
+            toc_items.append(("List of Figures", romans_map.get(next_roman_idx, "viii"), 1, False))
+            next_roman_idx += 1
+        toc_items.append(("List of Abbreviations & Acronyms", romans_map.get(next_roman_idx, "ix"), 1, False))
+
+    elif doc_type == "proposal":
+        toc_items = [
+            ("PRELIMINARY PAGES", "", 0, True),
+            ("Declaration of Originality of Proposal", "ii", 1, False),
+            ("Abstract", "iii", 1, False),
+            ("Résumé", "iv", 1, False),
+            ("Table of Contents", "v", 1, False),
+        ]
+        next_roman_idx = 6
+        romans_map = {6: "vi", 7: "vii", 8: "viii", 9: "ix", 10: "x"}
+        if tables_present:
+            toc_items.append(("List of Tables", romans_map.get(next_roman_idx, "vi"), 1, False))
+            next_roman_idx += 1
+        if figures_present:
+            toc_items.append(("List of Figures", romans_map.get(next_roman_idx, "vii"), 1, False))
+            next_roman_idx += 1
+        toc_items.append(("List of Abbreviations & Acronyms", romans_map.get(next_roman_idx, "viii"), 1, False))
+
     else:
         # Dissertation / Thesis standard
         toc_items = [
@@ -1515,81 +1438,153 @@ def build_table_of_contents(doc: docx.Document, parsed: ParsedDocument, doc_type
             ("Dedication", "vi", 1, False),
             ("Acknowledgements", "vii", 1, False),
             ("Table of Contents", "viii", 1, False),
-            ("List of Tables", "ix", 1, False),
-            ("List of Figures", "x", 1, False),
-            ("List of Abbreviations & Acronyms", "xi", 1, False),
         ]
-        sections_found = False
-        if body_paras:
-            cur_p = 1
-            w_count = 0
-            cur_ch = 0
-            for bp in body_paras:
-                txt = bp.get("text", "").strip()
-                w_count += len(txt.split())
-                ch_m = re.match(r'^(?:CHAPTER|CHAPITRE)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-–]\s*|\s+)(.*)$', txt, re.IGNORECASE)
-                sec_m = re.match(r'^([1-5])\.\d+\s+(.*)$', txt)
-                is_ref = txt.upper() in ["REFERENCES", "BIBLIOGRAPHY"]
-                if ch_m:
-                    sections_found = True
-                    num_str = ch_m.group(1).upper()
-                    roman_map = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6}
-                    ch_num = roman_map.get(num_str, int(num_str) if num_str.isdigit() else 1)
-                    if ch_num > 1 and ch_num > cur_ch:
+        next_roman_idx = 9
+        romans_map = {9: "ix", 10: "x", 11: "xi", 12: "xii"}
+        if tables_present:
+            toc_items.append(("List of Tables", romans_map.get(next_roman_idx, "ix"), 1, False))
+            next_roman_idx += 1
+        if figures_present:
+            toc_items.append(("List of Figures", romans_map.get(next_roman_idx, "x"), 1, False))
+            next_roman_idx += 1
+        toc_items.append(("List of Abbreviations & Acronyms", romans_map.get(next_roman_idx, "xi"), 1, False))
+
+    # 2. Extract Substantive Body Chapters & Sections dynamically
+    seen_chapters = set()
+    seen_sections = set()
+    cur_p = 1
+    word_count = 0
+    body_items = []
+
+    roman_map = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7}
+    ch_titles_default = {
+        1: "INTRODUCTION",
+        2: "LITERATURE REVIEW" if doc_type != "internship" else "HOST ORGANIZATION OVERVIEW",
+        3: "MATERIALS AND METHODS" if doc_type not in ["proposal", "internship"] else ("PROPOSED METHODOLOGY" if doc_type == "proposal" else "INTERNSHIP ACTIVITIES"),
+        4: "RESULTS AND DISCUSSION" if doc_type != "internship" else "SITUATIONAL AND CRITICAL APPRAISAL",
+        5: "CONCLUSION AND RECOMMENDATIONS"
+    }
+
+    if body_paras:
+        for bp in body_paras:
+            txt = bp.get("text", "").strip()
+            if not txt:
+                continue
+
+            words = len(txt.split())
+            word_count += words
+            if word_count > 300:
+                cur_p += max(1, word_count // 300)
+                word_count = word_count % 300
+
+            # Match explicit chapter heading
+            ch_m = re.match(r'^(?:CHAPTER|CHAPITRE)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-–]\s*|\s+)(.*)$', txt, re.IGNORECASE)
+            # Match section heading e.g. "1.1 Background"
+            sec_m = re.match(r'^([1-9])\.(\d+)(?:\s*[:\-–]\s*|\s+)(.*)$', txt)
+            # Match assignment questions/tasks
+            task_m = re.match(r'^(?:QUESTION|TASK|EXERCISE|PROBLEM|PART|SECTION)\s*(\d+|[IVXLCDM]+)?(?:\s*[:\-–]\s*|\s+)(.*)$', txt, re.IGNORECASE)
+
+            if ch_m:
+                num_str = ch_m.group(1).upper()
+                ch_num = roman_map.get(num_str, int(num_str) if num_str.isdigit() else 1)
+                if ch_num not in seen_chapters:
+                    seen_chapters.add(ch_num)
+                    if ch_num > 1:
                         cur_p += 1
-                        w_count = 0
-                    cur_ch = ch_num
-                    sub = ch_m.group(2).strip()
-                    toc_items.append((f"CHAPTER {ch_num}: {sub}".upper(), str(cur_p), 0, True))
-                elif sec_m:
-                    sec_ch = int(sec_m.group(1))
-                    if sec_ch > cur_ch:
-                        if cur_ch > 0:
+                        word_count = 0
+                    sub = ch_m.group(2).strip().upper()
+                    def_t = ch_titles_default.get(ch_num, "")
+                    ch_title_text = f"CHAPTER {ch_num}: {sub}" if sub else (f"CHAPTER {ch_num}: {def_t}" if def_t else f"CHAPTER {ch_num}")
+                    body_items.append((ch_title_text, str(cur_p), 0, True))
+
+            elif sec_m:
+                ch_num = int(sec_m.group(1))
+                sec_num = int(sec_m.group(2))
+                sec_key = f"{ch_num}.{sec_num}"
+                if sec_key not in seen_sections:
+                    seen_sections.add(sec_key)
+                    # Auto-inject chapter if missing
+                    if ch_num not in seen_chapters:
+                        seen_chapters.add(ch_num)
+                        if ch_num > 1:
                             cur_p += 1
-                            w_count = 0
-                        cur_ch = sec_ch
-                        ch_names = {
-                            1: "INTRODUCTION", 2: "LITERATURE REVIEW",
-                            3: "MATERIALS AND METHODS", 4: "RESULTS AND DISCUSSIONS",
-                            5: "CONCLUSION AND RECOMMENDATIONS"
-                        }
-                        toc_items.append((f"CHAPTER {sec_ch}: {ch_names.get(sec_ch, '')}", str(cur_p), 0, True))
-                    if bp.get("level", 2) <= 2 or re.match(r'^\d+\.\d+\s', txt):
-                        sections_found = True
-                        toc_items.append((txt[:60], str(cur_p), 1, False))
-                elif is_ref:
+                            word_count = 0
+                        def_t = ch_titles_default.get(ch_num, f"CHAPTER {ch_num}")
+                        body_items.append((f"CHAPTER {ch_num}: {def_t}".upper(), str(cur_p), 0, True))
+                    sec_title = sec_m.group(3).strip() if sec_m.group(3) else txt
+                    clean_sec_title = f"{ch_num}.{sec_num} {sec_title}"[:65].strip()
+                    body_items.append((clean_sec_title, str(cur_p), 1, False))
+
+            elif task_m and doc_type == "assignment":
+                task_lbl = txt[:65].strip()
+                if task_lbl not in seen_sections:
+                    seen_sections.add(task_lbl)
+                    body_items.append((task_lbl, str(cur_p), 1, False))
+
+            elif txt.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
+                if "REFERENCES" not in seen_sections:
+                    seen_sections.add("REFERENCES")
                     cur_p += 1
-                    w_count = 0
-                    toc_items.append(("REFERENCES", str(cur_p), 0, True))
-                if w_count > 320:
-                    cur_p += max(1, w_count // 320)
-                    w_count = w_count % 320
-        if not sections_found:
-            toc_items.extend([
+                    word_count = 0
+                    body_items.append(("REFERENCES", str(cur_p), 0, True))
+
+            elif any(txt.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
+                if "APPENDICES" not in seen_sections:
+                    seen_sections.add("APPENDICES")
+                    cur_p += 1
+                    word_count = 0
+                    body_items.append((txt[:60].upper(), str(cur_p), 0, True))
+
+    # Fallback only if no chapters or sections could be extracted from document text
+    if not body_items:
+        if doc_type == "assignment":
+            body_items = [
+                ("Task 1: System Requirements & Theoretical Analysis", "1", 1, False),
+                ("Task 2: Architectural Design & Implementation", "3", 1, False),
+                ("Task 3: Verification, Testing & Discussion of Results", "6", 1, False),
+                ("Conclusion & Summary", "8", 1, False),
+                ("REFERENCES", "9", 0, True),
+            ]
+        elif doc_type == "internship":
+            body_items = [
+                ("CHAPTER 1: INTRODUCTION & BACKGROUND", "1", 0, True),
+                ("1.1 Background of Internship", "1", 1, False),
+                ("1.2 Objectives of Internship", "3", 1, False),
+                ("CHAPTER 2: OVERVIEW OF HOST ORGANIZATION", "5", 0, True),
+                ("2.1 Organization Structure & Profile", "5", 1, False),
+                ("CHAPTER 3: INTERNSHIP ACTIVITIES", "9", 0, True),
+                ("3.1 Key Tasks and Technical Implementation", "9", 1, False),
+                ("CHAPTER 4: CRITICAL APPRAISAL & LESSONS LEARNT", "15", 0, True),
+                ("CHAPTER 5: CONCLUSION & RECOMMENDATIONS", "20", 0, True),
+                ("REFERENCES", "22", 0, True),
+            ]
+        elif doc_type == "proposal":
+            body_items = [
                 ("CHAPTER 1: INTRODUCTION", "1", 0, True),
                 ("1.1 Background of the Study", "1", 1, False),
-                ("1.2 Description of Research Problem Area(s)", "4", 1, False),
-                ("1.3 Research Questions and Objectives", "6", 1, False),
-                ("1.4 Rationale (Justification, Motivation, Significance)", "9", 1, False),
-                ("1.5 Scope and Limitations of the Study", "11", 1, False),
-                ("CHAPTER 2: LITERATURE REVIEW", "14", 0, True),
-                ("2.1 Theoretical Framework", "14", 1, False),
-                ("2.2 Empirical Review of Related Works", "19", 1, False),
-                ("2.3 Summary of Knowledge Gaps", "26", 1, False),
-                ("CHAPTER 3: MATERIALS AND METHODS", "29", 0, True),
-                ("3.1 Research Design & Framework", "29", 1, False),
-                ("3.2 Description of Study Site & Materials", "32", 1, False),
-                ("3.3 Procedures, Ethical Considerations & Statistical Analysis", "36", 1, False),
-                ("CHAPTER 4: RESULTS AND DISCUSSIONS", "41", 0, True),
-                ("4.1 Presentation and Statistical Analysis of Data", "41", 1, False),
-                ("4.2 Interpretation and Discussion of Findings", "52", 1, False),
-                ("CHAPTER 5: CONCLUSION, RECOMMENDATIONS & PERSPECTIVES", "65", 0, True),
-                ("5.1 Conclusions", "65", 1, False),
-                ("5.2 Recommendations", "67", 1, False),
-                ("5.3 Perspectives for Future Research", "69", 1, False),
-                ("REFERENCES", "71", 0, True),
-                ("APPENDICES", "78", 0, True),
-            ])
+                ("1.2 Problem Statement & Objectives", "3", 1, False),
+                ("CHAPTER 2: LITERATURE REVIEW", "5", 0, True),
+                ("2.1 Conceptual Framework & State of the Art", "5", 1, False),
+                ("CHAPTER 3: PROPOSED RESEARCH METHODOLOGY", "9", 0, True),
+                ("3.1 Research Design & Architecture", "9", 1, False),
+                ("REFERENCES", "13", 0, True),
+            ]
+        else:
+            body_items = [
+                ("CHAPTER 1: INTRODUCTION", "1", 0, True),
+                ("1.1 Background of the Study", "1", 1, False),
+                ("1.2 Problem Statement & Research Objectives", "4", 1, False),
+                ("CHAPTER 2: LITERATURE REVIEW", "8", 0, True),
+                ("2.1 Theoretical Framework", "8", 1, False),
+                ("CHAPTER 3: MATERIALS AND METHODS", "15", 0, True),
+                ("3.1 Research Design & Technical Framework", "15", 1, False),
+                ("CHAPTER 4: RESULTS AND DISCUSSION", "22", 0, True),
+                ("4.1 Presentation and Analysis of Results", "22", 1, False),
+                ("CHAPTER 5: CONCLUSION AND RECOMMENDATIONS", "30", 0, True),
+                ("REFERENCES", "33", 0, True),
+            ]
+
+    toc_items.extend(body_items)
 
     for title, page_str, level, is_major in toc_items:
         p_row = doc.add_paragraph()
@@ -1603,21 +1598,22 @@ def build_table_of_contents(doc: docx.Document, parsed: ParsedDocument, doc_type
         left_text = title
         if is_major:
             r_lt = p_row.add_run(left_text)
-            r_lt.font.name = "Times New Roman"
+            r_lt.font.name = rules.font_name
             r_lt.font.size = Pt(11.5)
             r_lt.font.bold = True
         else:
             indent = "    " * (level - 1) if level > 1 else "  "
             r_lt = p_row.add_run(indent + left_text)
-            r_lt.font.name = "Times New Roman"
+            r_lt.font.name = rules.font_name
             r_lt.font.size = Pt(11)
 
         if page_str:
             r_p = p_row.add_run(f"\t{page_str}")
-            r_p.font.name = "Times New Roman"
+            r_p.font.name = rules.font_name
             r_p.font.size = Pt(11)
             if is_major:
                 r_p.font.bold = True
+
 
 
 
@@ -1787,6 +1783,142 @@ def format_body_paragraph(
         run.font.size = Pt(rules.font_size_pt)
 
 
+def _transfer_and_format_drawing_paragraph(
+    child,
+    source_docx: docx.Document,
+    dest_doc: docx.Document,
+    rules: CustomFormattingRules,
+    current_chapter: int,
+    fig_counter: Dict[int, int],
+    next_raw_t: str = ""
+):
+    """
+    Safely copies a drawing/picture paragraph from source_docx into dest_doc,
+    re-linking its binary image parts to prevent broken or missing images,
+    centers the figure, and provides standard academic captioning below the figure.
+    """
+    p_copy = copy.deepcopy(child)
+    embed_attr = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed'
+    rel_attr = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
+
+    # Re-link OpenXML drawings (a:blip) and legacy VML (v:imagedata)
+    for elem in p_copy.iter():
+        if elem.tag.endswith('blip'):
+            if embed_attr in elem.attrib:
+                rId = elem.attrib[embed_attr]
+                if rId in source_docx.part.related_parts:
+                    src_part = source_docx.part.related_parts[rId]
+                    if hasattr(src_part, 'blob'):
+                        new_rId, _ = dest_doc.part.get_or_add_image(io.BytesIO(src_part.blob))
+                        elem.attrib[embed_attr] = new_rId
+        elif elem.tag.endswith('imagedata'):
+            if rel_attr in elem.attrib:
+                rId = elem.attrib[rel_attr]
+                if rId in source_docx.part.related_parts:
+                    src_part = source_docx.part.related_parts[rId]
+                    if hasattr(src_part, 'blob'):
+                        new_rId, _ = dest_doc.part.get_or_add_image(io.BytesIO(src_part.blob))
+                        elem.attrib[rel_attr] = new_rId
+
+    # Strip text runs that might be inside the drawing paragraph to keep picture clean
+    for r in list(p_copy):
+        if r.tag.endswith('r'):
+            has_draw = any(c.tag.endswith('drawing') or c.tag.endswith('pict') for c in r.iter())
+            if not has_draw:
+                p_copy.remove(r)
+
+    # Insert drawing paragraph into destination body
+    dest_doc._body._body._insert_p(p_copy)
+    fig_p = docx.text.paragraph.Paragraph(p_copy, dest_doc)
+    fig_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fig_p.paragraph_format.space_before = Pt(14)
+    fig_p.paragraph_format.space_after = Pt(4)
+
+    # Academic Figure Captioning: placed BELOW the figure
+    # Check if the next paragraph or surrounding context has a caption
+    has_next_caption = bool(re.match(r'^(?:Figure|Fig\.?)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', next_raw_t, re.IGNORECASE))
+    if not has_next_caption:
+        ch_key = current_chapter if current_chapter > 0 else 1
+        fig_counter[ch_key] = fig_counter.get(ch_key, 0) + 1
+        fig_num = fig_counter[ch_key]
+        caption_text = f"Figure {ch_key}.{fig_num}: System Diagram and Illustration"
+        p_cap = dest_doc.add_paragraph()
+        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_cap.paragraph_format.space_before = Pt(4)
+        p_cap.paragraph_format.space_after = Pt(14)
+        r_c = p_cap.add_run(caption_text)
+        r_c.font.name = rules.font_name
+        r_c.font.size = Pt(10.5)
+        r_c.font.bold = True
+        r_c.font.italic = True
+
+
+def _transfer_and_format_table(
+    child,
+    dest_doc: docx.Document,
+    rules: CustomFormattingRules,
+    current_chapter: int,
+    tbl_counter: Dict[int, int],
+    prev_raw_t: str = ""
+):
+    """
+    Safely copies a table from source_docx into dest_doc,
+    applies professional academic captioning ABOVE the table if missing,
+    centers the table, and standardizes fonts and borders.
+    """
+    ch_key = current_chapter if current_chapter > 0 else 1
+    # Check if preceding paragraph was an explicit table caption
+    has_prev_caption = bool(re.match(r'^(?:Table|Tableau)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', prev_raw_t, re.IGNORECASE))
+
+    if not has_prev_caption:
+        # Generate clean identified table caption ABOVE table
+        tbl_counter[ch_key] = tbl_counter.get(ch_key, 0) + 1
+        tbl_num = tbl_counter[ch_key]
+
+        headers = []
+        for tc in child.xpath('.//w:tr[1]//w:tc'):
+            p_elem = tc.xpath('.//w:p')
+            if p_elem:
+                txt = "".join(p_elem[0].xpath('.//text()')).strip()
+                if txt and len(txt) < 30:
+                    headers.append(txt)
+
+        if headers:
+            cap_title = f"Summary of {', '.join(headers[:3])}"
+        else:
+            cap_title = "Data and Specifications Matrix"
+
+        p_cap = dest_doc.add_paragraph()
+        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_cap.paragraph_format.space_before = Pt(14)
+        p_cap.paragraph_format.space_after = Pt(4)
+        r_c = p_cap.add_run(f"Table {ch_key}.{tbl_num}: {cap_title}")
+        r_c.font.name = rules.font_name
+        r_c.font.size = Pt(10.5)
+        r_c.font.bold = True
+
+    # Copy and insert table
+    tbl_copy = copy.deepcopy(child)
+    dest_doc._body._body._insert_tbl(tbl_copy)
+    t = docx.table.Table(tbl_copy, dest_doc)
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    # Format table text and header row
+    for r_idx, row in enumerate(t.rows):
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                p.paragraph_format.line_spacing = 1.15
+                p.paragraph_format.space_before = Pt(2)
+                p.paragraph_format.space_after = Pt(2)
+                for run in p.runs:
+                    run.font.name = rules.font_name
+                    run.font.size = Pt(9.5 if len(row.cells) > 4 else 10.0)
+                    if r_idx == 0:
+                        run.font.bold = True
+            if r_idx == 0:
+                set_cell_background(cell, "F1F5F9")
+
+
 def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_path: str):
     """
     Core function that builds a complete, standard-compliant UBa/COLTECH document
@@ -1866,20 +1998,20 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         members_count = len(meta.group_members) if meta.group_members else (4 if meta.is_group_assignment else 1)
         if is_group_ass and members_count > 5:
             build_group_members_page(doc, meta)
-        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras)
+        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
         doc.add_page_break()
         build_assignment_acknowledgements(doc, meta)
 
     elif req.doc_type == "internship":
         build_internship_prelims(doc, meta, parsed)
-        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras)
+        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
 
     else:
         build_statutory_prelims(doc, meta, req.doc_type)
         build_abstract_and_resume(doc, meta, parsed)
         if req.doc_type != "proposal":
             build_dissertation_dedication_and_ack(doc, meta)
-        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras)
+        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
 
     # 6. Add Section Break for Main Body (Section 2 - centered decimal from 1)
     body_section = doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
@@ -1918,22 +2050,34 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         except Exception:
             source_docx = None
 
-    if len(body_paras) > 5:
+    if len(body_paras) > 0:
         current_chapter = 0
         in_references = False
+        fig_counter = {}
+        tbl_counter = {}
+        prev_raw_t = ""
 
         # Find starting child index in source_docx if available
         source_start_elem_idx = -1
         if source_docx:
             first_body_txt = body_paras[0].get("text", "").strip() if body_paras else ""
             clean_first = re.sub(r'\s+', ' ', first_body_txt).strip().upper()
-            for s_idx, child in enumerate(source_docx.element.body):
-                if child.tag.endswith('p'):
-                    p_test = docx.text.paragraph.Paragraph(child, source_docx)
-                    clean_test = re.sub(r'\s+', ' ', p_test.text).strip().upper()
-                    if clean_test == clean_first:
-                        source_start_elem_idx = s_idx
-                        break
+            if clean_first:
+                for s_idx, child in enumerate(source_docx.element.body):
+                    if child.tag.endswith('p'):
+                        p_test = docx.text.paragraph.Paragraph(child, source_docx)
+                        clean_test = re.sub(r'\s+', ' ', p_test.text).strip().upper()
+                        if clean_test == clean_first:
+                            source_start_elem_idx = s_idx
+                            break
+                if source_start_elem_idx < 0:
+                    for s_idx, child in enumerate(source_docx.element.body):
+                        if child.tag.endswith('p'):
+                            p_test = docx.text.paragraph.Paragraph(child, source_docx)
+                            clean_test = re.sub(r'\s+', ' ', p_test.text).strip().upper()
+                            if clean_first[:40] in clean_test or clean_test[:40] in clean_first:
+                                source_start_elem_idx = s_idx
+                                break
             if source_start_elem_idx < 0:
                 for s_idx, child in enumerate(source_docx.element.body):
                     if child.tag.endswith('p'):
@@ -1942,6 +2086,16 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         if re.match(r'^(?:CHAPTER\s+1|CHAPITRE\s+1|1\.1\b)', txt_up):
                             source_start_elem_idx = s_idx
                             break
+            if source_start_elem_idx < 0:
+                for s_idx, child in enumerate(source_docx.element.body):
+                    if child.tag.endswith('p'):
+                        p_test = docx.text.paragraph.Paragraph(child, source_docx)
+                        txt_val = p_test.text.strip()
+                        if txt_val and not is_standalone_prelim_header(txt_val):
+                            source_start_elem_idx = s_idx
+                            break
+                if source_start_elem_idx < 0:
+                    source_start_elem_idx = 0
 
         # Auto-inject Chapter 1 heading if missing
         first_text = body_paras[0].get("text", "").strip() if body_paras else ""
@@ -1953,25 +2107,68 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
             current_chapter = 1
 
         if source_docx and source_start_elem_idx >= 0:
-            for child in source_docx.element.body[source_start_elem_idx:]:
+            children = source_docx.element.body[source_start_elem_idx:]
+            total_children = len(children)
+
+            for c_idx, child in enumerate(children):
+                next_raw_t = ""
+                for next_idx in range(c_idx + 1, min(c_idx + 3, total_children)):
+                    if children[next_idx].tag.endswith('p'):
+                        p_next = docx.text.paragraph.Paragraph(children[next_idx], source_docx)
+                        if p_next.text.strip():
+                            next_raw_t = p_next.text.strip()
+                            break
+
                 if child.tag.endswith('tbl'):
-                    tbl_copy = copy.deepcopy(child)
-                    doc._body._body._insert_tbl(tbl_copy)
-                    t = docx.table.Table(tbl_copy, doc)
-                    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    _transfer_and_format_table(child, doc, rules, current_chapter, tbl_counter, prev_raw_t=prev_raw_t)
+                    prev_raw_t = ""
+                    continue
+
                 elif child.tag.endswith('p'):
                     sp = docx.text.paragraph.Paragraph(child, source_docx)
                     raw_t = sp.text.strip()
                     has_drawing = bool(child.xpath('.//w:drawing') or child.xpath('.//w:pict'))
+
                     if not raw_t and not has_drawing:
                         continue
-                    if has_drawing and not raw_t:
-                        p_copy = copy.deepcopy(child)
-                        doc._body._body._insert_p(p_copy)
+
+                    if has_drawing:
+                        _transfer_and_format_drawing_paragraph(
+                            child, source_docx, doc, rules, current_chapter, fig_counter, next_raw_t=next_raw_t or raw_t
+                        )
+                        prev_raw_t = raw_t
                         continue
+
                     if is_standalone_prelim_header(raw_t):
                         continue
                     if re.search(r'\t\s*\d+\s*$', raw_t) or re.search(r'\.{3,}\s*\d+\s*$', raw_t):
+                        continue
+
+                    # Explicit figure caption
+                    if re.match(r'^(?:Figure|Fig\.?)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', raw_t, re.IGNORECASE):
+                        p_cap = doc.add_paragraph()
+                        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p_cap.paragraph_format.space_before = Pt(4)
+                        p_cap.paragraph_format.space_after = Pt(14)
+                        r_c = p_cap.add_run(raw_t)
+                        r_c.font.name = rules.font_name
+                        r_c.font.size = Pt(10.5)
+                        r_c.font.bold = True
+                        r_c.font.italic = True
+                        prev_raw_t = raw_t
+                        continue
+
+                    # Explicit table caption
+                    if re.match(r'^(?:Table|Tableau)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', raw_t, re.IGNORECASE):
+                        p_cap = doc.add_paragraph()
+                        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p_cap.paragraph_format.space_before = Pt(14)
+                        p_cap.paragraph_format.space_after = Pt(4)
+                        r_c = p_cap.add_run(raw_t)
+                        r_c.font.name = rules.font_name
+                        r_c.font.size = Pt(10.5)
+                        r_c.font.bold = True
+                        prev_raw_t = raw_t
                         continue
 
                     # References header check
@@ -1981,6 +2178,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         format_p(p_elem, "REFERENCES", is_chapter=True)
                         in_references = True
                         current_chapter = 99
+                        prev_raw_t = raw_t
                         continue
 
                     # Appendices header check
@@ -1990,6 +2188,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         format_p(p_elem, raw_t.upper(), is_chapter=True)
                         in_references = False
                         current_chapter = 100
+                        prev_raw_t = raw_t
                         continue
 
                     # Explicit chapter heading
@@ -2012,6 +2211,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         format_p(p_elem, ch_text, is_chapter=True)
                         current_chapter = explicit_ch_num
                         in_references = False
+                        prev_raw_t = raw_t
                         continue
 
                     # Section promotion
@@ -2064,6 +2264,8 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                             format_p(p_elem, raw_t, is_sub2=True)
                     else:
                         format_p(p_elem, raw_t)
+                    
+                    prev_raw_t = raw_t
         else:
             # Fallback for plain body_paras (e.g. from PDF)
             for p_info in body_paras:

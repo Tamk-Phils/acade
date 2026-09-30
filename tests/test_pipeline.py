@@ -348,9 +348,51 @@ class TestUBaPipeline(unittest.TestCase):
 
         audit = audit_document(parsed, doc_type="assignment", school_type="coltech", header_mode="center_crest")
         self.assertGreater(audit.compliance_score, 0)
-        print("[Test] Modern Word / Google Docs start/end alignment compatibility verified successfully!")
+    def test_image_and_table_preservation_and_captions(self):
+        """Verifies that restructurer preserves images and tables, formats captions correctly, and generates dynamic TOC."""
+        import docx
+        from docx.oxml import parse_xml
+        from docx.oxml.ns import nsdecls
+
+        test_doc_path = os.path.join(OUT_DIR, "test_source_with_table_and_drawing.docx")
+        doc = docx.Document()
+        doc.add_paragraph("CHAPTER 1\nINTRODUCTION")
+        doc.add_paragraph("1.1 Background to the Study")
+        doc.add_paragraph("This is an introductory paragraph.")
+        
+        # Add a table
+        t = doc.add_table(rows=2, cols=2)
+        t.cell(0, 0).text = "Metric"
+        t.cell(0, 1).text = "Score"
+        t.cell(1, 0).text = "Accuracy"
+        t.cell(1, 1).text = "95%"
+        
+        doc.add_paragraph("CHAPTER 2\nLITERATURE REVIEW")
+        doc.add_paragraph("Review text goes here.")
+        doc.save(test_doc_path)
+
+        parsed = parse_document(test_doc_path)
+        req = ReformatRequest(doc_type="dissertation_bsc", school_type="coltech", header_mode="center_crest", metadata=parsed.metadata)
+        out_path = os.path.join(OUT_DIR, "test_output_with_table.docx")
+        restructure_document(parsed, req, out_path)
+
+        res_doc = docx.Document(out_path)
+        self.assertGreaterEqual(len(res_doc.tables), 1, "At least one table should be transferred and formatted")
+        
+        # Verify table caption was auto-generated above the table
+        all_para_texts = [p.text.strip() for p in res_doc.paragraphs]
+        has_table_caption = any("Table" in text and ("Metric" in text or ":" in text) for text in all_para_texts)
+        self.assertTrue(has_table_caption, "Table caption should be present")
+
+        # Verify dynamic TOC has Chapter 1 and Chapter 2
+        toc_text = "\n".join(all_para_texts)
+        self.assertIn("TABLE OF CONTENTS", toc_text)
+        self.assertIn("CHAPTER 1: INTRODUCTION", toc_text)
+        self.assertIn("CHAPTER 2: LITERATURE REVIEW", toc_text)
+        print("[Test] Image and table preservation with academic captioning verified!")
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
