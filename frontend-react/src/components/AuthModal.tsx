@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { loginUser, signupUser } from '../services/api';
 import { User, Eligibility } from '../types';
 
@@ -16,29 +16,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onOpenPrivacy
 }) => {
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
-  // Register Fields
-  const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // Sign In Fields (isolated)
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Register Fields (isolated)
+  const [regFullName, setRegFullName] = useState('');
+  const [regUsername, setRegUsername] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // When modal opens, clear transient error and prefill last username if available
+  useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      setLoginPassword('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      const lastUser = localStorage.getItem('acadformat_last_user');
+      if (lastUser && !loginIdentifier) {
+        setLoginIdentifier(lastUser);
+      }
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const cleanId = loginIdentifier.trim();
+    if (!cleanId || !loginPassword) {
+      setError('Please enter your username or email, and password.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const resp = await loginUser(identifier, password);
+      const resp = await loginUser(cleanId, loginPassword);
+      try {
+        localStorage.setItem('acadformat_last_user', cleanId);
+      } catch (_) {}
+      setLoginPassword('');
       onAuthSuccess(resp.user, resp.eligibility);
       onClose();
     } catch (err: any) {
@@ -52,7 +81,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (password !== confirmPassword) {
+    const cleanFullName = regFullName.trim();
+    const cleanUsername = regUsername.trim();
+    const cleanEmail = regEmail.trim().toLowerCase();
+
+    if (!cleanFullName || cleanFullName.length < 3) {
+      setError('Full name must be at least 3 characters.');
+      return;
+    }
+    if (!cleanUsername || cleanUsername.length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('A valid institutional or personal email is required.');
+      return;
+    }
+    if (!regPassword || regPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
       setError('Passwords do not match.');
       return;
     }
@@ -64,13 +113,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     try {
       const resp = await signupUser({
-        full_name: fullName,
-        username,
-        email,
-        password,
-        confirm_password: confirmPassword,
+        full_name: cleanFullName,
+        username: cleanUsername,
+        email: cleanEmail,
+        password: regPassword,
+        confirm_password: regConfirmPassword,
         privacy_accepted: privacyAccepted
       });
+
+      try {
+        localStorage.setItem('acadformat_last_user', cleanUsername);
+      } catch (_) {}
+      setLoginIdentifier(cleanUsername);
+      setRegPassword('');
+      setRegConfirmPassword('');
       onAuthSuccess(resp.user, resp.eligibility);
       onClose();
     } catch (err: any) {
@@ -78,6 +134,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const switchMode = (newMode: 'signin' | 'register') => {
+    setMode(newMode);
+    setError(null);
   };
 
   return (
@@ -88,7 +149,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="button"
               className={`admin-tab ${mode === 'signin' ? 'active' : ''}`}
-              onClick={() => { setMode('signin'); setError(null); }}
+              onClick={() => switchMode('signin')}
               style={{ fontSize: '1rem', paddingBottom: '0.25rem' }}
             >
               Sign In
@@ -96,7 +157,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="button"
               className={`admin-tab ${mode === 'register' ? 'active' : ''}`}
-              onClick={() => { setMode('register'); setError(null); }}
+              onClick={() => switchMode('register')}
               style={{ fontSize: '1rem', paddingBottom: '0.25rem' }}
             >
               Create Account (3-Day Free Trial)
@@ -105,6 +166,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close authentication modal"
             style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#64748B' }}
           >
             ✕
@@ -125,9 +187,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   type="text"
                   className="form-control"
+                  placeholder="e.g. your_username or name@email.com"
                   required
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  autoComplete="username"
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
                 />
               </div>
 
@@ -135,18 +199,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <label className="form-label">Password</label>
                 <div style={{ position: 'relative' }}>
                   <input
-                    type={showPassword ? 'text' : 'password'}
+                    type={showLoginPassword ? 'text' : 'password'}
                     className="form-control"
+                    placeholder="Enter account password"
                     required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
                     style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: '#64748B' }}
                   >
-                    {showPassword ? 'Hide' : 'Show'}
+                    {showLoginPassword ? 'Hide' : 'Show'}
                   </button>
                 </div>
               </div>
@@ -162,6 +228,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 {loading ? 'Authenticating...' : 'Sign In'}
               </button>
+
+              <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                Don't have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('register')}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-accent)', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                >
+                  Create one (3-Day Free Trial)
+                </button>
+              </div>
             </form>
           ) : (
             <form onSubmit={handleSignup}>
@@ -170,9 +247,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   type="text"
                   className="form-control"
+                  placeholder="e.g. Njitapon Ahmed Said Assan"
                   required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  autoComplete="name"
+                  value={regFullName}
+                  onChange={(e) => setRegFullName(e.target.value)}
                 />
               </div>
 
@@ -182,9 +261,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <input
                     type="text"
                     className="form-control"
+                    placeholder="e.g. ahmedsaid"
                     required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="username"
+                    value={regUsername}
+                    onChange={(e) => setRegUsername(e.target.value)}
                   />
                 </div>
                 <div className="form-group">
@@ -192,9 +273,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <input
                     type="email"
                     className="form-control"
+                    placeholder="e.g. student@univ-bamenda.cm"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
                   />
                 </div>
               </div>
@@ -204,18 +287,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="form-label">Password</label>
                   <div style={{ position: 'relative' }}>
                     <input
-                      type={showPassword ? 'text' : 'password'}
+                      type={showRegPassword ? 'text' : 'password'}
                       className="form-control"
+                      placeholder="At least 6 characters"
                       required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
+                      onClick={() => setShowRegPassword(!showRegPassword)}
                       style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: '#64748B' }}
                     >
-                      {showPassword ? 'Hide' : 'Show'}
+                      {showRegPassword ? 'Hide' : 'Show'}
                     </button>
                   </div>
                 </div>
@@ -224,18 +309,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="form-label">Confirm Password</label>
                   <div style={{ position: 'relative' }}>
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      type={showRegConfirmPassword ? 'text' : 'password'}
                       className="form-control"
+                      placeholder="Repeat password"
                       required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                      value={regConfirmPassword}
+                      onChange={(e) => setRegConfirmPassword(e.target.value)}
                     />
                     <button
                       type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
                       style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: '#64748B' }}
                     >
-                      {showConfirmPassword ? 'Hide' : 'Show'}
+                      {showRegConfirmPassword ? 'Hide' : 'Show'}
                     </button>
                   </div>
                 </div>
@@ -271,6 +358,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 {loading ? 'Registering...' : 'Register & Start 72-Hour Free Trial'}
               </button>
+
+              <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                Already registered?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('signin')}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-accent)', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                >
+                  Sign In to your account
+                </button>
+              </div>
             </form>
           )}
         </div>
@@ -278,4 +376,3 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     </div>
   );
 };
-

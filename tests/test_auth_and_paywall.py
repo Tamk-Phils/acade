@@ -47,6 +47,72 @@ class TestAuthAndPaywall(unittest.TestCase):
         self.assertTrue(data["eligibility"]["allowed"])
         self.assertEqual(data["eligibility"]["reason"], "free_trial")
 
+    def test_signup_then_login_flow(self):
+        """Verifies that a user can sign up and immediately log in with username, email, uppercase, and spaces."""
+        ts = datetime.datetime.now().timestamp()
+        username = f"Student_Flow_{ts}"
+        email = f"student_flow_{ts}@univ-bamenda.cm"
+        password = "FlowPassword@2026"
+        device_id = "device_flow_1"
+
+        # 1. Sign up with leading/trailing spaces
+        signup_res = client.post("/api/auth/signup", json={
+            "full_name": "  Flow Test Student  ",
+            "username": f"  {username}  ",
+            "email": f"  {email}  ",
+            "password": password,
+            "confirm_password": password,
+            "privacy_accepted": True,
+            "device_id": device_id
+        })
+        self.assertEqual(signup_res.status_code, 200, f"Signup failed: {signup_res.text}")
+        signup_data = signup_res.json()
+        self.assertEqual(signup_data["status"], "success")
+        self.assertIn("user", signup_data)
+
+        # 2. Log in using exact username
+        login_u = client.post("/api/auth/login", json={
+            "identifier": username,
+            "password": password,
+            "device_id": device_id
+        })
+        self.assertEqual(login_u.status_code, 200, f"Login with username failed: {login_u.text}")
+        self.assertEqual(login_u.json()["status"], "success")
+        self.assertEqual(login_u.json()["user"]["username"], username)
+
+        # 3. Log in using lowercase username
+        login_u_lower = client.post("/api/auth/login", json={
+            "identifier": username.lower(),
+            "password": password,
+            "device_id": device_id
+        })
+        self.assertEqual(login_u_lower.status_code, 200, f"Login with lowercase username failed: {login_u_lower.text}")
+
+        # 4. Log in using email with mixed case and whitespace
+        login_e = client.post("/api/auth/login", json={
+            "identifier": f"  {email.upper()}  ",
+            "password": password,
+            "device_id": device_id
+        })
+        self.assertEqual(login_e.status_code, 200, f"Login with email failed: {login_e.text}")
+        self.assertEqual(login_e.json()["status"], "success")
+
+        # 5. Log in with wrong password
+        login_wrong = client.post("/api/auth/login", json={
+            "identifier": username,
+            "password": "WrongPassword123!",
+            "device_id": device_id
+        })
+        self.assertEqual(login_wrong.status_code, 401)
+
+        # 6. Log in with non-existent user
+        login_missing = client.post("/api/auth/login", json={
+            "identifier": "nonexistent_user_9999",
+            "password": password,
+            "device_id": device_id
+        })
+        self.assertEqual(login_missing.status_code, 401)
+
     def test_device_locking_and_paywall(self):
         unique_user = f"devlock_{datetime.datetime.now().timestamp()}"
         email = f"{unique_user}@univ.cm"

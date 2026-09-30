@@ -103,7 +103,7 @@ class SignupRequest(BaseModel):
     password: str
     confirm_password: Optional[str] = None
     privacy_accepted: bool
-    device_id: str
+    device_id: Optional[str] = None
 
 class LoginRequest(BaseModel):
     identifier: str

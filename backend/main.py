@@ -220,24 +220,29 @@ async def auth_signup(payload: SignupRequest):
             detail="You must accept the AcadFormat Privacy Policy under Cameroonian Law No. 2010/012 to register."
         )
 
-    if not payload.full_name or len(payload.full_name.strip()) < 3:
+    clean_fullname = (payload.full_name or "").strip()
+    clean_username = (payload.username or "").strip()
+    clean_email = (payload.email or "").strip().lower()
+    clean_pw = payload.password or ""
+
+    if not clean_fullname or len(clean_fullname) < 3:
         raise HTTPException(status_code=400, detail="Full name must be at least 3 characters.")
-    if not payload.username or len(payload.username.strip()) < 3:
+    if not clean_username or len(clean_username) < 3:
         raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
-    if not payload.email or "@" not in payload.email:
+    if not clean_email or "@" not in clean_email:
         raise HTTPException(status_code=400, detail="A valid institutional or personal email is required.")
-    if not payload.password or len(payload.password) < 6:
+    if not clean_pw or len(clean_pw) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
-    if payload.confirm_password and payload.password != payload.confirm_password:
+    if payload.confirm_password and clean_pw != payload.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match.")
 
     device_id = payload.device_id.strip() if payload.device_id else str(uuid.uuid4())
 
     success, msg, user_data = create_user(
-        full_name=payload.full_name,
-        username=payload.username,
-        email=payload.email,
-        password=payload.password,
+        full_name=clean_fullname,
+        username=clean_username,
+        email=clean_email,
+        password=clean_pw,
         device_id=device_id,
         role="user"
     )
@@ -264,12 +269,14 @@ async def auth_login(payload: LoginRequest):
     Authenticates a user and performs device locking check.
     If the account is logged into from a new device, flags mismatch.
     """
-    if not payload.identifier or not payload.password:
+    clean_id = (payload.identifier or "").strip()
+    clean_pw = payload.password or ""
+    if not clean_id or not clean_pw:
         raise HTTPException(status_code=400, detail="Username/Email and Password are required.")
 
     device_id = payload.device_id.strip() if payload.device_id else None
 
-    success, msg, user = authenticate_user(payload.identifier, payload.password, device_id)
+    success, msg, user = authenticate_user(clean_id, clean_pw, device_id)
     if not success:
         raise HTTPException(status_code=401, detail=msg)
 

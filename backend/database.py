@@ -32,6 +32,14 @@ def _resolve_storage_dir():
     except Exception:
         fallback = "/tmp/acadformat_storage"
         os.makedirs(fallback, exist_ok=True)
+        seed_db = os.path.join(BASE_DIR, "storage", "acadformat.db")
+        target_db = os.path.join(fallback, "acadformat.db")
+        if os.path.isfile(seed_db) and not os.path.exists(target_db):
+            try:
+                import shutil
+                shutil.copyfile(seed_db, target_db)
+            except Exception as copy_err:
+                print(f"[AcadFormat] Error copying seed DB to /tmp: {copy_err}")
         return fallback
 
 STORAGE_DIR = _resolve_storage_dir()
@@ -39,6 +47,19 @@ LOCAL_DB_PATH = os.path.join(STORAGE_DIR, "acadformat.db")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", os.getenv("SUPABASE_ANON_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))).strip()
+
+# If SUPABASE_URL is omitted but a Supabase JWT is provided, attempt to derive URL from ref
+if not SUPABASE_URL and SUPABASE_KEY and "." in SUPABASE_KEY:
+    try:
+        import base64
+        jwt_parts = SUPABASE_KEY.split(".")
+        if len(jwt_parts) >= 2:
+            payload_b64 = jwt_parts[1] + "=="
+            payload_json = json.loads(base64.urlsafe_b64decode(payload_b64.encode("utf-8")))
+            if "ref" in payload_json:
+                SUPABASE_URL = f"https://{payload_json['ref']}.supabase.co"
+    except Exception:
+        pass
 
 # Cloudflare D1 Serverless Database Configuration
 CLOUDFLARE_DATABASE_ID = os.getenv("CLOUDFLARE_DATABASE_ID", "1ce80e78-f367-494d-aa47-5c87a8e02613").strip()
@@ -285,17 +306,49 @@ except Exception as e:
 # ---------------------------------------------------------
 # User Authentication & Management
 # ---------------------------------------------------------
+def _cache_user_locally(user_data: Dict[str, Any]):
+    """Caches a remote user record into local SQLite for fast subsequent access."""
+    try:
+        conn = sqlite3.connect(LOCAL_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT OR REPLACE INTO acadformat_users
+        (id, full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_data.get("id"),
+            user_data.get("full_name"),
+            user_data.get("username"),
+            user_data.get("email"),
+            user_data.get("password_hash"),
+            user_data.get("role", "user"),
+            user_data.get("registered_device_id"),
+            user_data.get("trial_expires_at"),
+            user_data.get("paid_until"),
+            user_data.get("created_at")
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[AcadFormat] Error caching remote user locally: {e}")
+
+
 def create_user(
     full_name: str,
     username: str,
     email: str,
     password: str,
-    device_id: str,
+    device_id: Optional[str] = None,
     role: str = "user"
 ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
     Registers a new user, initiates the 72-hour free trial, and locks account to the initial device.
     """
+    clean_fullname = (full_name or "").strip()
+    clean_username = (username or "").strip()
+    clean_email = (email or "").strip().lower()
+    clean_device = (device_id or "").strip()
+
     now = datetime.datetime.now(datetime.timezone.utc)
     config = get_system_config()
     trial_hours = int(config.get("trial_duration_hours", 72))
@@ -307,8 +360,8 @@ def create_user(
     conn = sqlite3.connect(LOCAL_DB_PATH)
     cursor = conn.cursor()
     try:
-        # Check existing
-        cursor.execute("SELECT id, username, email FROM acadformat_users WHERE username = ? OR email = ?", (username.strip(), email.strip().lower()))
+        # Check existing with case-insensitive collation
+        cursor.execute("SELECT id, username, email FROM acadformat_users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE", (clean_username, clean_email))
         existing = cursor.fetchone()
         if existing:
             conn.close()
@@ -318,7 +371,7 @@ def create_user(
         INSERT INTO acadformat_users 
         (full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)
-        """, (full_name.strip(), username.strip(), email.strip().lower(), pw_hash, role, device_id.strip(), trial_expires, now_iso))
+        """, (clean_fullname, clean_username, clean_email, pw_hash, role, clean_device, trial_expires, now_iso))
         user_id = cursor.lastrowid
         conn.commit()
 
@@ -332,7 +385,7 @@ def create_user(
         # Sync to Cloudflare D1 if configured
         sync_to_cloudflare_d1(
             "INSERT INTO acadformat_users (id, full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
-            [user_id, full_name.strip(), username.strip(), email.strip().lower(), pw_hash, role, device_id.strip(), trial_expires, now_iso]
+            [user_id, clean_fullname, clean_username, clean_email, pw_hash, role, clean_device, trial_expires, now_iso]
         )
 
         # Sync to Supabase if available
@@ -341,12 +394,12 @@ def create_user(
                 url = f"{SUPABASE_URL}/rest/v1/acadformat_users"
                 with httpx.Client(timeout=4.0) as client:
                     client.post(url, headers=get_supabase_headers(), json={
-                        "full_name": full_name.strip(),
-                        "username": username.strip(),
-                        "email": email.strip().lower(),
+                        "full_name": clean_fullname,
+                        "username": clean_username,
+                        "email": clean_email,
                         "password_hash": pw_hash,
                         "role": role,
-                        "registered_device_id": device_id.strip(),
+                        "registered_device_id": clean_device,
                         "trial_expires_at": trial_expires,
                         "created_at": now_iso
                     })
@@ -363,6 +416,9 @@ def authenticate_user(identifier: str, password: str, current_device_id: Optiona
     """
     Authenticates user by email or username, and returns status including device lock evaluation.
     """
+    clean_id = (identifier or "").strip()
+    clean_device = (current_device_id or "").strip() if current_device_id else None
+
     conn = sqlite3.connect(LOCAL_DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -370,10 +426,35 @@ def authenticate_user(identifier: str, password: str, current_device_id: Optiona
     cursor.execute("""
     SELECT id, full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at
     FROM acadformat_users 
-    WHERE LOWER(username) = ? OR LOWER(email) = ?
-    """, (identifier.strip().lower(), identifier.strip().lower()))
+    WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE OR LOWER(username) = ? OR LOWER(email) = ?
+    """, (clean_id, clean_id, clean_id.lower(), clean_id.lower()))
     row = cursor.fetchone()
     conn.close()
+
+    # Fallback to Cloudflare D1 if not found locally and D1 is configured
+    if not row and is_cloudflare_configured():
+        try:
+            cf_rows = execute_d1_query(
+                "SELECT id, full_name, username, email, password_hash, role, registered_device_id, trial_expires_at, paid_until, created_at FROM acadformat_users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE",
+                [clean_id, clean_id]
+            )
+            if cf_rows:
+                row = cf_rows[0]
+                _cache_user_locally(row)
+        except Exception:
+            pass
+
+    # Fallback to Supabase if not found locally and Supabase is configured
+    if not row and is_supabase_configured():
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/acadformat_users?or=(username.ilike.{clean_id},email.ilike.{clean_id})"
+            with httpx.Client(timeout=4.0) as client:
+                res = client.get(url, headers=get_supabase_headers())
+                if res.status_code == 200 and res.json():
+                    row = res.json()[0]
+                    _cache_user_locally(row)
+        except Exception:
+            pass
 
     if not row:
         return False, "Invalid email/username or password.", None
@@ -386,15 +467,15 @@ def authenticate_user(identifier: str, password: str, current_device_id: Optiona
     del user["password_hash"]
 
     # Device check: if registered_device_id was empty, auto-bind
-    if current_device_id and not user.get("registered_device_id"):
-        bind_device(user["id"], current_device_id)
-        user["registered_device_id"] = current_device_id
+    if clean_device and not user.get("registered_device_id"):
+        bind_device(user["id"], clean_device)
+        user["registered_device_id"] = clean_device
 
     # Check device match
     user["device_matched"] = bool(
         user["role"] in ["admin", "super_admin"] or
         not user.get("registered_device_id") or
-        user.get("registered_device_id") == current_device_id
+        user.get("registered_device_id") == clean_device
     )
 
     return True, "Authentication successful.", user

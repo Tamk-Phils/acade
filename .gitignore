@@ -27,6 +27,7 @@ frontend-react/dist/
 # Application storage & user uploads
 storage/*
 !storage/.gitkeep
+!storage/acadformat.db
 output/
 
 # Environment & Sensitive configs

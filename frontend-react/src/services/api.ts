@@ -188,18 +188,19 @@ export async function checkAuthMe(): Promise<{ authenticated: boolean; user?: Us
 }
 
 export async function loginUser(identifier: string, password: string): Promise<{ user: User; session_token: string; eligibility: Eligibility }> {
+  const cleanId = (identifier || '').trim();
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      identifier,
+      identifier: cleanId,
       password,
       device_id: getDeviceFingerprint()
     })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Authentication failed' }));
-    throw new Error(err.detail || 'Login failed');
+    throw new Error(err.detail || 'Login failed. Please verify credentials.');
   }
   const data = await res.json();
   setAuthToken(data.session_token);
@@ -219,6 +220,9 @@ export async function signupUser(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ...payload,
+      full_name: (payload.full_name || '').trim(),
+      username: (payload.username || '').trim(),
+      email: (payload.email || '').trim().toLowerCase(),
       device_id: getDeviceFingerprint()
     })
   });
