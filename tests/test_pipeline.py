@@ -391,6 +391,107 @@ class TestUBaPipeline(unittest.TestCase):
         self.assertIn("CHAPTER 2: LITERATURE REVIEW", toc_text)
         print("[Test] Image and table preservation with academic captioning verified!")
 
+    def test_no_duplicate_chapter_headings(self):
+        """Verifies that chapter headings do not repeat across page boundaries or section promotion."""
+        import docx
+        test_doc_path = os.path.join(OUT_DIR, "test_chapter_dedup_source.docx")
+        doc = docx.Document()
+        doc.add_paragraph("CHAPTER 1")
+        doc.add_paragraph("INTRODUCTION")
+        doc.add_paragraph("1.1 Background")
+        doc.add_paragraph("This is chapter 1 body text.")
+        doc.add_paragraph("CHAPTER 2")
+        doc.add_paragraph("LITERATURE REVIEW")
+        doc.add_paragraph("2.1 Conceptual Review")
+        doc.add_paragraph("This is chapter 2 body text.")
+        doc.save(test_doc_path)
+
+        parsed = parse_document(test_doc_path)
+        req = ReformatRequest(doc_type="dissertation_bsc", school_type="coltech", header_mode="center_crest", metadata=parsed.metadata)
+        out_path = os.path.join(OUT_DIR, "test_chapter_dedup_out.docx")
+        restructure_document(parsed, req, out_path)
+
+        res_doc = docx.Document(out_path)
+        body_paras = [p for p in res_doc.paragraphs if p.text.strip()]
+        # Find body CHAPTER 1 heading (exact text "CHAPTER 1\nINTRODUCTION", not the TOC dot-leader entry)
+        body_ch1_idx = -1
+        for i, p in enumerate(body_paras):
+            if p.text.strip() == "CHAPTER 1\nINTRODUCTION":
+                body_ch1_idx = i
+                break
+
+        self.assertGreater(body_ch1_idx, 0, "CHAPTER 1 heading should exist in body")
+        body_from_ch1 = [p.text.strip() for p in body_paras[body_ch1_idx:]]
+        
+        # Count how many times CHAPTER 2 heading appears in body
+        ch2_headings = [t for t in body_from_ch1 if t.startswith("CHAPTER 2\n") or t == "CHAPTER 2"]
+        self.assertEqual(len(ch2_headings), 1, f"CHAPTER 2 heading should appear exactly once in body, found: {ch2_headings}")
+
+    def test_resume_page_has_no_project_title(self):
+        """Verifies that the French Résumé page has ONLY the 'RÉSUMÉ' heading without repeating the project title."""
+        import docx
+        parsed = parse_document(TEST_DOCX)
+        req = ReformatRequest(doc_type="dissertation_bsc", school_type="coltech", header_mode="center_crest", metadata=parsed.metadata)
+        out_path = os.path.join(OUT_DIR, "test_resume_title_removal.docx")
+        restructure_document(parsed, req, out_path)
+
+        res_doc = docx.Document(out_path)
+        texts = [p.text.strip() for p in res_doc.paragraphs if p.text.strip()]
+        
+        # Find RÉSUMÉ index
+        resume_idx = -1
+        for i, t in enumerate(texts):
+            if t == "RÉSUMÉ":
+                resume_idx = i
+                break
+
+        self.assertGreater(resume_idx, 0, "RÉSUMÉ section heading must exist")
+        # Ensure that the immediately preceding paragraph is NOT the project title
+        # In abstract/preliminaries, before RÉSUMÉ was Abstract keywords; after RÉSUMÉ is French body
+        # Specifically verify neither preceding nor following element is the project title
+        title_upper = parsed.metadata.title.upper() if parsed.metadata.title else ""
+        if title_upper and len(title_upper) > 10:
+            self.assertNotEqual(texts[resume_idx - 1], f"« {title_upper} »", "Project title must not precede RÉSUMÉ")
+            self.assertNotEqual(texts[resume_idx + 1], f"« {title_upper} »", "Project title must not follow immediately after RÉSUMÉ")
+
+    def test_ai_figure_analysis_accept_and_reject(self):
+        """Verifies AI figure analysis detects unlabeled figures, proposes labels, and supports accept/reject."""
+        from backend.chatbot import parse_and_generate_local_nlp
+
+        meta = {
+            "unlabeled_figures": [
+                {"figure_index": 1, "proposed_label": "Figure 1.1: System Flow Architecture"},
+                {"figure_index": 2, "proposed_label": "Figure 2.1: Conceptual Framework Matrix"}
+            ]
+        }
+
+        # 1. Ask AI to analyze figures
+        resp_analyze = parse_and_generate_local_nlp(
+            message="Please analyze my figures and check if any are unlabeled",
+            metadata=meta
+        )
+        self.assertEqual(resp_analyze["status"], "success")
+        self.assertIn("Figure 1.1: System Flow Architecture", resp_analyze["reply"])
+        self.assertIn("Yes, apply figure labels", resp_analyze["suggestions"])
+
+        # 2. User accepts proposed labels
+        resp_accept = parse_and_generate_local_nlp(
+            message="Yes, apply figure labels",
+            metadata=meta
+        )
+        self.assertEqual(resp_accept["status"], "success")
+        self.assertIsNotNone(resp_accept["applied_changes"])
+        self.assertTrue(resp_accept["applied_changes"].get("apply_proposed_figure_labels"))
+
+        # 3. User rejects proposed labels
+        resp_reject = parse_and_generate_local_nlp(
+            message="No, keep original figures",
+            metadata=meta
+        )
+        self.assertEqual(resp_reject["status"], "success")
+        self.assertIsNotNone(resp_reject["applied_changes"])
+        self.assertFalse(resp_reject["applied_changes"].get("apply_proposed_figure_labels"))
+
 if __name__ == "__main__":
     unittest.main()
 

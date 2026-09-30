@@ -35,6 +35,7 @@ class CustomFormattingRules:
         self.margin_bottom_cm: float = 2.0
         self.box_title: bool = True
         self.alignment: WD_ALIGN_PARAGRAPH = WD_ALIGN_PARAGRAPH.JUSTIFY
+        self.auto_label_unlabeled_figures: bool = True
         self.has_custom_overrides: bool = False
 
     @property
@@ -177,6 +178,12 @@ def parse_custom_formatting_rules(meta: Optional[DocumentMetadata] = None, req: 
             rules.alignment = WD_ALIGN_PARAGRAPH.LEFT
         elif re.search(r'\b(justif(?:ied|y))\b', low):
             rules.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+        # Figure labeling acceptance / rejection parsing
+        if re.search(r'\b(do not label|dont label|no figure labels?|keep original figures?|without figure labels?)\b', low):
+            rules.auto_label_unlabeled_figures = False
+        elif re.search(r'\b(apply proposed (?:figure )?labels?|label figures?)\b', low):
+            rules.auto_label_unlabeled_figures = True
 
     return rules
 
@@ -1282,14 +1289,6 @@ def build_abstract_and_resume(doc: docx.Document, meta: DocumentMetadata, parsed
     r_rh.font.size = Pt(14)
     r_rh.font.bold = True
 
-    p_fr_title = doc.add_paragraph()
-    p_fr_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_fr_title.paragraph_format.space_after = Pt(14)
-    r_fr_title = p_fr_title.add_run(f"« {meta.title.upper()} »")
-    r_fr_title.font.name = "Times New Roman"
-    r_fr_title.font.size = Pt(12.5)
-    r_fr_title.font.bold = True
-
     p_rab = doc.add_paragraph()
     p_rab.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p_rab.paragraph_format.line_spacing = 1.5
@@ -1726,6 +1725,27 @@ def find_true_body_start_index(paragraphs: List[Dict[str, Any]], doc_type: str =
     return 0
 
 
+CH_NUM_MAP = {
+    '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
+    'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7,
+    'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5, 'SIX': 6, 'SEVEN': 7,
+    'UN': 1, 'DEUX': 2, 'TROIS': 3, 'QUATRE': 4, 'CINQ': 5
+}
+
+def get_standard_chapter_title(ch_num: int, doc_type: str = "dissertation_bsc") -> str:
+    if ch_num == 1:
+        return "INTRODUCTION"
+    elif ch_num == 2:
+        return "LITERATURE REVIEW"
+    elif ch_num == 3:
+        return "PROPOSED RESEARCH METHODOLOGY" if doc_type == "proposal" else "MATERIALS AND METHODS"
+    elif ch_num == 4:
+        return "RESULTS AND DISCUSSIONS"
+    elif ch_num == 5:
+        return "CONCLUSION AND RECOMMENDATIONS"
+    return f"CHAPTER {ch_num}"
+
+
 def format_body_paragraph(
     p,
     text: str,
@@ -1744,6 +1764,7 @@ def format_body_paragraph(
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(24)
         p.paragraph_format.space_after = Pt(18)
+        p.paragraph_format.keep_with_next = True
         run = p.add_run(text.upper())
         run.font.name = rules.font_name
         run.font.size = Pt(rules.heading1_size_pt)
@@ -1837,7 +1858,7 @@ def _transfer_and_format_drawing_paragraph(
     # Academic Figure Captioning: placed BELOW the figure
     # Check if the next paragraph or surrounding context has a caption
     has_next_caption = bool(re.match(r'^(?:Figure|Fig\.?)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', next_raw_t, re.IGNORECASE))
-    if not has_next_caption:
+    if not has_next_caption and rules.auto_label_unlabeled_figures:
         ch_key = current_chapter if current_chapter > 0 else 1
         fig_counter[ch_key] = fig_counter.get(ch_key, 0) + 1
         fig_num = fig_counter[ch_key]
@@ -2109,8 +2130,13 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         if source_docx and source_start_elem_idx >= 0:
             children = source_docx.element.body[source_start_elem_idx:]
             total_children = len(children)
+            skip_next_elem = False
 
             for c_idx, child in enumerate(children):
+                if skip_next_elem:
+                    skip_next_elem = False
+                    continue
+
                 next_raw_t = ""
                 for next_idx in range(c_idx + 1, min(c_idx + 3, total_children)):
                     if children[next_idx].tag.endswith('p'):
@@ -2173,8 +2199,8 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
 
                     # References header check
                     if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
-                        doc.add_page_break()
                         p_elem = doc.add_paragraph()
+                        p_elem.paragraph_format.page_break_before = True
                         format_p(p_elem, "REFERENCES", is_chapter=True)
                         in_references = True
                         current_chapter = 99
@@ -2183,8 +2209,8 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
 
                     # Appendices header check
                     if any(raw_t.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
-                        doc.add_page_break()
                         p_elem = doc.add_paragraph()
+                        p_elem.paragraph_format.page_break_before = True
                         format_p(p_elem, raw_t.upper(), is_chapter=True)
                         in_references = False
                         current_chapter = 100
@@ -2192,21 +2218,28 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         continue
 
                     # Explicit chapter heading
-                    ch_match = re.match(r'^(?:CHAPTER|CHAPITRE)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-–]\s*|\s+)(.*)$', raw_t, re.IGNORECASE)
+                    ch_match = re.match(
+                        r'^(?:CHAPTER|CHAPITRE)\s+([0-9]+|[IVXLCDM]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|UN|DEUX|TROIS|QUATRE|CINQ)\b(?:\s*[:\-–—]\s*|\s*)(.*)$',
+                        raw_t,
+                        re.IGNORECASE
+                    )
                     explicit_ch_num = None
                     if ch_match:
-                        try:
-                            num_str = ch_match.group(1).upper()
-                            roman_map = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7}
-                            explicit_ch_num = roman_map.get(num_str, int(num_str) if num_str.isdigit() else 1)
-                        except Exception:
-                            explicit_ch_num = 1
+                        num_str = ch_match.group(1).upper()
+                        explicit_ch_num = CH_NUM_MAP.get(num_str, int(num_str) if num_str.isdigit() else 1)
 
                     if explicit_ch_num is not None:
-                        if explicit_ch_num > 1:
-                            doc.add_page_break()
-                        p_elem = doc.add_paragraph()
                         ch_sub = ch_match.group(2).strip().upper() if ch_match.group(2) else ""
+                        if not ch_sub and next_raw_t:
+                            if not re.match(r'^\d+\.\d+', next_raw_t) and not re.match(r'^(?:CHAPTER|CHAPITRE|Table|Figure)\b', next_raw_t, re.IGNORECASE) and len(next_raw_t) < 80:
+                                ch_sub = next_raw_t.strip().upper()
+                                skip_next_elem = True
+                        if not ch_sub:
+                            ch_sub = get_standard_chapter_title(explicit_ch_num, req.doc_type)
+
+                        p_elem = doc.add_paragraph()
+                        if explicit_ch_num > 1:
+                            p_elem.paragraph_format.page_break_before = True
                         ch_text = f"CHAPTER {explicit_ch_num}" + (f"\n{ch_sub}" if ch_sub else "")
                         format_p(p_elem, ch_text, is_chapter=True)
                         current_chapter = explicit_ch_num
@@ -2214,27 +2247,29 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         prev_raw_t = raw_t
                         continue
 
-                    # Section promotion
+                    # Standalone conclusion heading
+                    concl_match = re.match(r'^(?:CONCLUSION|CONCLUSIONS)\b(?:\s*[:\-–—,\s])*(.*)$', raw_t, re.IGNORECASE)
+                    if concl_match and current_chapter < 5 and req.doc_type != "assignment" and not in_references:
+                        concl_sub = concl_match.group(1).strip().upper() if concl_match.group(1) else ""
+                        if not concl_sub:
+                            concl_sub = "CONCLUSION AND RECOMMENDATIONS"
+                        p_elem = doc.add_paragraph()
+                        p_elem.paragraph_format.page_break_before = True
+                        format_p(p_elem, f"CHAPTER 5\n{concl_sub}", is_chapter=True)
+                        current_chapter = 5
+                        in_references = False
+                        prev_raw_t = raw_t
+                        continue
+
+                    # Section promotion (only if chapter heading was omitted in manuscript)
                     sec_match = re.match(r'^([1-5])\.1(?:\s+|$)', raw_t)
                     if sec_match and req.doc_type != "assignment" and not in_references:
                         sec_ch_num = int(sec_match.group(1))
                         if sec_ch_num > current_chapter:
-                            if sec_ch_num > 1:
-                                doc.add_page_break()
                             p_ch = doc.add_paragraph()
-                            if sec_ch_num == 1:
-                                ch_title = "CHAPTER 1\nINTRODUCTION"
-                            elif sec_ch_num == 2:
-                                ch_title = "CHAPTER 2\nLITERATURE REVIEW"
-                            elif sec_ch_num == 3:
-                                ch_title = "CHAPTER 3\nPROPOSED RESEARCH METHODOLOGY" if req.doc_type == "proposal" else "CHAPTER 3\nMATERIALS AND METHODS"
-                            elif sec_ch_num == 4:
-                                ch_title = "CHAPTER 4\nRESULTS AND DISCUSSIONS"
-                            elif sec_ch_num == 5:
-                                ch_title = "CHAPTER 5\nCONCLUSION AND RECOMMENDATIONS"
-                            else:
-                                ch_title = f"CHAPTER {sec_ch_num}"
-                            
+                            if sec_ch_num > 1:
+                                p_ch.paragraph_format.page_break_before = True
+                            ch_title = f"CHAPTER {sec_ch_num}\n{get_standard_chapter_title(sec_ch_num, req.doc_type)}"
                             format_p(p_ch, ch_title, is_chapter=True)
                             current_chapter = sec_ch_num
 
@@ -2256,7 +2291,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     if in_references:
                         format_p(p_elem, raw_t, is_ref=True)
                     elif is_h:
-                        if lvl == 1 or "CHAPTER" in raw_t.upper():
+                        if lvl == 1 or re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
                             format_p(p_elem, raw_t, is_chapter=True)
                         elif lvl == 2:
                             format_p(p_elem, raw_t, is_sub1=True)
@@ -2268,68 +2303,86 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     prev_raw_t = raw_t
         else:
             # Fallback for plain body_paras (e.g. from PDF)
-            for p_info in body_paras:
+            skip_next_p = False
+            for p_idx, p_info in enumerate(body_paras):
+                if skip_next_p:
+                    skip_next_p = False
+                    continue
                 raw_t = p_info["text"].strip()
+                next_p_text = body_paras[p_idx + 1]["text"].strip() if p_idx + 1 < len(body_paras) else ""
+
                 if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
-                    doc.add_page_break()
                     p_elem = doc.add_paragraph()
+                    p_elem.paragraph_format.page_break_before = True
                     format_p(p_elem, "REFERENCES", is_chapter=True)
                     in_references = True
                     current_chapter = 99
                     continue
                 if any(raw_t.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
-                    doc.add_page_break()
                     p_elem = doc.add_paragraph()
+                    p_elem.paragraph_format.page_break_before = True
                     format_p(p_elem, raw_t.upper(), is_chapter=True)
                     in_references = False
                     current_chapter = 100
                     continue
-                ch_match = re.match(r'^(?:CHAPTER|CHAPITRE)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-–]\s*|\s+)(.*)$', raw_t, re.IGNORECASE)
+
+                ch_match = re.match(
+                    r'^(?:CHAPTER|CHAPITRE)\s+([0-9]+|[IVXLCDM]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|UN|DEUX|TROIS|QUATRE|CINQ)\b(?:\s*[:\-–—]\s*|\s*)(.*)$',
+                    raw_t,
+                    re.IGNORECASE
+                )
                 explicit_ch_num = None
                 if ch_match:
-                    try:
-                        num_str = ch_match.group(1).upper()
-                        roman_map = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7}
-                        explicit_ch_num = roman_map.get(num_str, int(num_str) if num_str.isdigit() else 1)
-                    except Exception:
-                        explicit_ch_num = 1
+                    num_str = ch_match.group(1).upper()
+                    explicit_ch_num = CH_NUM_MAP.get(num_str, int(num_str) if num_str.isdigit() else 1)
+
                 if explicit_ch_num is not None:
-                    if explicit_ch_num > 1:
-                        doc.add_page_break()
-                    p_elem = doc.add_paragraph()
                     ch_sub = ch_match.group(2).strip().upper() if ch_match.group(2) else ""
+                    if not ch_sub and next_p_text:
+                        if not re.match(r'^\d+\.\d+', next_p_text) and not re.match(r'^(?:CHAPTER|CHAPITRE|Table|Figure)\b', next_p_text, re.IGNORECASE) and len(next_p_text) < 80:
+                            ch_sub = next_p_text.strip().upper()
+                            skip_next_p = True
+                    if not ch_sub:
+                        ch_sub = get_standard_chapter_title(explicit_ch_num, req.doc_type)
+
+                    p_elem = doc.add_paragraph()
+                    if explicit_ch_num > 1:
+                        p_elem.paragraph_format.page_break_before = True
                     ch_text = f"CHAPTER {explicit_ch_num}" + (f"\n{ch_sub}" if ch_sub else "")
                     format_p(p_elem, ch_text, is_chapter=True)
                     current_chapter = explicit_ch_num
                     in_references = False
                     continue
+
+                concl_match = re.match(r'^(?:CONCLUSION|CONCLUSIONS)\b(?:\s*[:\-–—,\s])*(.*)$', raw_t, re.IGNORECASE)
+                if concl_match and current_chapter < 5 and req.doc_type != "assignment" and not in_references:
+                    concl_sub = concl_match.group(1).strip().upper() if concl_match.group(1) else ""
+                    if not concl_sub:
+                        concl_sub = "CONCLUSION AND RECOMMENDATIONS"
+                    p_elem = doc.add_paragraph()
+                    p_elem.paragraph_format.page_break_before = True
+                    format_p(p_elem, f"CHAPTER 5\n{concl_sub}", is_chapter=True)
+                    current_chapter = 5
+                    in_references = False
+                    continue
+
                 sec_match = re.match(r'^([1-5])\.1(?:\s+|$)', raw_t)
                 if sec_match and req.doc_type != "assignment" and not in_references:
                     sec_ch_num = int(sec_match.group(1))
                     if sec_ch_num > current_chapter:
-                        if sec_ch_num > 1:
-                            doc.add_page_break()
                         p_ch = doc.add_paragraph()
-                        if sec_ch_num == 1:
-                            ch_title = "CHAPTER 1\nINTRODUCTION"
-                        elif sec_ch_num == 2:
-                            ch_title = "CHAPTER 2\nLITERATURE REVIEW"
-                        elif sec_ch_num == 3:
-                            ch_title = "CHAPTER 3\nPROPOSED RESEARCH METHODOLOGY" if req.doc_type == "proposal" else "CHAPTER 3\nMATERIALS AND METHODS"
-                        elif sec_ch_num == 4:
-                            ch_title = "CHAPTER 4\nRESULTS AND DISCUSSIONS"
-                        elif sec_ch_num == 5:
-                            ch_title = "CHAPTER 5\nCONCLUSION AND RECOMMENDATIONS"
-                        else:
-                            ch_title = f"CHAPTER {sec_ch_num}"
+                        if sec_ch_num > 1:
+                            p_ch.paragraph_format.page_break_before = True
+                        ch_title = f"CHAPTER {sec_ch_num}\n{get_standard_chapter_title(sec_ch_num, req.doc_type)}"
                         format_p(p_ch, ch_title, is_chapter=True)
                         current_chapter = sec_ch_num
+
                 p_elem = doc.add_paragraph()
                 if in_references:
                     format_p(p_elem, raw_t, is_ref=True)
                 elif p_info.get("is_heading"):
                     lvl = p_info.get("level", 1)
-                    if lvl == 1 or "CHAPTER" in raw_t.upper():
+                    if lvl == 1 or re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
                         format_p(p_elem, raw_t, is_chapter=True)
                     elif lvl == 2:
                         format_p(p_elem, raw_t, is_sub1=True)

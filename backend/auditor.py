@@ -172,6 +172,21 @@ def audit_document(
             detected_sections.append("List of Figures")
             passed_checks += 1
 
+        unlabeled_figs = getattr(doc, "unlabeled_figures", [])
+        if unlabeled_figs:
+            total_checks += 1
+            proposed_labels = [f.get("proposed_label", "") for f in unlabeled_figs[:3]]
+            sample_labels_str = " | ".join(proposed_labels)
+            issues.append(AuditIssue(
+                id="unlabeled-figures-detected",
+                category="illustrations",
+                severity="info",
+                message=f"{len(unlabeled_figs)} figure(s) lack standard academic captions (Figure X.Y: Description).",
+                recommendation=f"AI proposed labels: {sample_labels_str}. Ask AI 'Apply proposed figure labels' to automatically insert them below each figure."
+            ))
+        else:
+            passed_checks += 1
+
     # 6. Heading depth check (max 3 levels)
     total_checks += 1
     deep_headings = [h["text"] for h in doc.headings if h.get("level", 0) > 3 or (len(h["text"].split()[0].split('.')) > 3 if h["text"].split() else False)]

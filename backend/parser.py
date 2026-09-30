@@ -216,6 +216,7 @@ class ParsedDocument:
         self.has_references: bool = False
         self.has_appendices: bool = False
         self.extracted_tables: List[Dict[str, Any]] = []
+        self.unlabeled_figures: List[Dict[str, Any]] = []
 
 
 def parse_docx(file_path: str) -> ParsedDocument:
@@ -237,7 +238,7 @@ def parse_docx(file_path: str) -> ParsedDocument:
     fonts_set = set()
     spacings_set = set()
 
-    for p in doc.paragraphs:
+    for idx, p in enumerate(doc.paragraphs):
         txt = p.text.strip()
         if not txt:
             continue
@@ -284,6 +285,29 @@ def parse_docx(file_path: str) -> ParsedDocument:
         parsed.paragraphs.append(para_info)
         if is_heading:
             parsed.headings.append(para_info)
+
+        # Figure and Drawing Detection & Caption Audit
+        has_drawing = bool(p._p.xpath('.//w:drawing') or p._p.xpath('.//w:pict'))
+        if has_drawing:
+            has_caption = bool(re.match(r'^(?:Figure|Fig\.?)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', txt, re.IGNORECASE))
+            if not has_caption and idx + 1 < len(doc.paragraphs):
+                next_t = doc.paragraphs[idx + 1].text.strip()
+                has_caption = bool(re.match(r'^(?:Figure|Fig\.?)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', next_t, re.IGNORECASE))
+            if not has_caption and idx > 0:
+                prev_t = doc.paragraphs[idx - 1].text.strip()
+                has_caption = bool(re.match(r'^(?:Figure|Fig\.?)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', prev_t, re.IGNORECASE))
+
+            if not has_caption:
+                last_h = parsed.headings[-1]["text"] if parsed.headings else "Chapter 1 Introduction"
+                clean_h = re.sub(r'^\d+(?:\.\d+)*\s*', '', last_h).strip()
+                label_desc = clean_h if clean_h and len(clean_h) < 60 else "System Architecture & Conceptual Workflow"
+                fig_num = len(parsed.unlabeled_figures) + 1
+                parsed.unlabeled_figures.append({
+                    "figure_index": fig_num,
+                    "paragraph_index": idx,
+                    "nearest_heading": last_h,
+                    "proposed_label": f"Figure {fig_num}: {label_desc}"
+                })
 
         txt_upper = txt.upper()
         if "TABLE OF CONTENTS" in txt_upper:

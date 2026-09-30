@@ -671,6 +671,26 @@ def parse_and_generate_local_nlp(
 
         actions.append(f"Recorded Custom Formatting Instructions: {', '.join(custom_cands) if custom_cands else clean_msg[:60]}")
 
+    # 11. Figure Analysis & Proposed Label Acceptance / Rejection
+    if any(kw in low for kw in [
+        "apply figure label", "apply figure labels", "apply proposed label", "apply proposed labels",
+        "accept figure label", "accept figure labels", "accept label", "accept labels",
+        "yes, apply figure", "yes apply figure", "yes, apply labels", "yes apply labels",
+        "label the figures", "label figures"
+    ]):
+        applied["custom_instructions"] = (meta.get("custom_instructions", "") + " Apply proposed academic captions to unlabeled figures.").strip()
+        applied["apply_proposed_figure_labels"] = True
+        actions.append("Accepted and applied proposed academic labels to figures")
+
+    elif any(kw in low for kw in [
+        "no, keep original", "no keep original", "keep original figure", "keep original figures",
+        "don't apply", "dont apply", "do not apply", "reject label", "reject labels",
+        "do not label figure", "dont label figure", "leave figures as is", "leave figures untouched"
+    ]):
+        applied["custom_instructions"] = (meta.get("custom_instructions", "") + " Do not label figures. Keep original figures untouched.").strip()
+        applied["apply_proposed_figure_labels"] = False
+        actions.append("Kept original figures without generating additional labels")
+
     # ---------------------------------------------------------
     # Synthesize Natural Conversational Responses (Star-Free)
     # ---------------------------------------------------------
@@ -693,7 +713,30 @@ def parse_and_generate_local_nlp(
         }
 
     # Conversational Questions & Formatting Advice
-    if any(kw in low for kw in ["margin", "binding", "border", "padding", "4cm", "4.0"]):
+    if (any(kw in low for kw in ["figure", "figures", "image", "images", "chart", "charts", "diagram", "diagrams", "illustration", "illustrations"]) and
+        any(w in low for w in ["analyze", "check", "unlabeled", "missing", "label", "caption", "name", "propose", "suggest", "look at", "inspect"])):
+        unlabeled = meta.get("unlabeled_figures", [])
+        if unlabeled:
+            fig_lines = []
+            for f in unlabeled[:5]:
+                p_label = f.get("proposed_label", "Figure: Caption")
+                fig_lines.append(f"• Proposed: {p_label}")
+            reply = (
+                f"I analyzed your manuscript and detected {len(unlabeled)} figure(s) that lack standard academic captions:\n\n"
+                + "\n".join(fig_lines)
+                + "\n\nWould you like me to automatically apply these proposed labels to your manuscript?\n"
+                + "• Reply **'Yes, apply figure labels'** to accept.\n"
+                + "• Reply **'No, keep original'** to leave figures untouched."
+            )
+            suggestions = ["Yes, apply figure labels", "No, keep original", "Review List of Figures"]
+        else:
+            reply = (
+                "I analyzed the figures across your manuscript. All figures currently have academic captions, or no unlabeled drawings were detected in the text body.\n\n"
+                "If you want to add or modify any figure captions, you can specify instructions like *'Set Figure 1 to System Workflow Diagram'* or *'Apply proposed labels'*."
+            )
+            suggestions = ["Check List of Figures", "Table of Contents", "Export DOCX"]
+
+    elif any(kw in low for kw in ["margin", "binding", "border", "padding", "4cm", "4.0"]):
         reply = (
             "**Why 4.0 cm inside margin is mandatory at UBa & CATUC:**\n\n"
             "Academic binders in Bamenda use heavy dark-black buckram hardcover binding that clamps **1.5 inches (approximately 3.8 to 4.0 cm)** directly into the left edge of the page. "
