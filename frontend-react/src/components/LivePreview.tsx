@@ -28,7 +28,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
   const [activeTab, setActiveTab] = useState<'pages' | 'structure'>('pages');
   const [selectedSnippet, setSelectedSnippet] = useState<string>('');
   const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
+  const [downloadingFmt, setDownloadingFmt] = useState<'docx' | 'pdf' | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+
+  // Sync downloading state
+  useEffect(() => {
+    if (!downloading) {
+      setDownloadingFmt(null);
+    }
+  }, [downloading]);
 
   // Reset page index if pages array updates
   useEffect(() => {
@@ -273,32 +281,62 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             type="button"
             className="btn-export docx"
             disabled={!hasPages || downloading}
-            onClick={() => onDownload('docx')}
+            onClick={() => {
+              setDownloadingFmt('docx');
+              onDownload('docx');
+            }}
             title="Download official Microsoft Word document"
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Download DOCX
+            {downloading && downloadingFmt === 'docx' ? (
+              <>
+                <svg className="btn-spinner" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                  <path d="M12 2a10 10 0 0 1 10 10"></path>
+                </svg>
+                Downloading DOCX...
+              </>
+            ) : (
+              <>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download DOCX
+              </>
+            )}
           </button>
 
           <button
             type="button"
             className="btn-export pdf"
             disabled={!hasPages || downloading}
-            onClick={() => onDownload('pdf')}
+            onClick={() => {
+              setDownloadingFmt('pdf');
+              onDownload('pdf');
+            }}
             title="Download print-ready PDF"
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            Download PDF
+            {downloading && downloadingFmt === 'pdf' ? (
+              <>
+                <svg className="btn-spinner" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                  <path d="M12 2a10 10 0 0 1 10 10"></path>
+                </svg>
+                Downloading PDF...
+              </>
+            ) : (
+              <>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                Download PDF
+              </>
+            )}
           </button>
         </div>
       </div>

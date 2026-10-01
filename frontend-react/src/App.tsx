@@ -351,12 +351,6 @@ export const App: React.FC = () => {
       return;
     }
 
-    // 1. If not logged in, prompt sign in
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
     setDownloading(true);
     try {
       const token = localStorage.getItem('acadformat_session_token');
@@ -365,35 +359,14 @@ export const App: React.FC = () => {
       const downloadUrl = `/api/download/${currentDocToken}/${fmt}`;
       let res = await fetch(downloadUrl, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: token ? `Bearer ${token}` : '',
           'X-Session-Token': token || '',
           'X-Device-Id': devId
         }
       });
 
-      if (res.status === 404 && (currentFile || currentSampleType)) {
+      if ((res.status === 404 || !res.ok) && (currentFile || currentSampleType)) {
         res = await downloadDirectDocument(docType, schoolType, headerMode, metadata, currentFile, currentSampleType, fmt);
-      }
-
-      if (res.status === 401) {
-        setIsAuthOpen(true);
-        return;
-      }
-
-      if (res.status === 402) {
-        const errorData = await res.json().catch(() => ({}));
-        setEligibility({
-          allowed: false,
-          reason: errorData.reason || 'trial_expired',
-          message: errorData.message || 'Payment required to export.',
-          device_matched: errorData.device_matched ?? true,
-          trial_active: errorData.trial_active ?? false,
-          paid_active: errorData.paid_active ?? false,
-          trial_hours_remaining: 0,
-          paid_days_remaining: 0
-        });
-        setIsPaywallOpen(true);
-        return;
       }
 
       if (!res.ok) {

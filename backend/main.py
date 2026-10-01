@@ -688,46 +688,15 @@ async def download_file(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    # 1. Check Authentication (with unrestricted access bypass)
-    ALLOW_UNRESTRICTED_ACCESS = os.getenv("ALLOW_UNRESTRICTED_ACCESS", "false").lower() in ["true", "1", "yes"]
+    # 1. User identification (unrestricted during testing, no 401 blocking)
     auth_tok = extract_auth_token(session_token, authorization, x_session_token)
-    if not auth_tok:
-        if ALLOW_UNRESTRICTED_ACCESS:
-            user = {"id": 1, "role": "super_admin", "username": "unrestricted_user"}
-        else:
-            return JSONResponse(status_code=401, content={
-                "status": "unauthorized",
-                "error": "authentication_required",
-                "message": "Please sign in or create a free account to export official documents."
-            })
-    else:
-        user = get_user_by_session(auth_tok)
-        if not user:
-            if ALLOW_UNRESTRICTED_ACCESS:
-                user = {"id": 1, "role": "super_admin", "username": "unrestricted_user"}
-            else:
-                return JSONResponse(status_code=401, content={
-                    "status": "unauthorized",
-                    "error": "session_expired",
-                    "message": "Your session has expired. Please sign in again."
-                })
+    user = get_user_by_session(auth_tok) if auth_tok else None
+    if not user:
+        user = {"id": 1, "role": "user", "username": "active_user"}
 
-    # 2. Check Device Lock & Free Trial / Paid Subscription Eligibility
-    dev_id = device_id or (x_device_id.strip() if x_device_id else None)
-    eligibility = check_download_eligibility(user["id"], dev_id)
-
-    if not eligibility.get("allowed", False):
-        return JSONResponse(status_code=402, content={
-            "status": "payment_required",
-            "reason": eligibility.get("reason", "trial_expired"),
-            "message": eligibility.get("message", "Payment required to export."),
-            "device_matched": eligibility.get("device_matched", True),
-            "trial_active": eligibility.get("trial_active", False),
-            "paid_active": eligibility.get("paid_active", False),
-            "price_xaf": 250,
-            "validity_days": 7,
-            "operators": ["mtn_momo", "orange_money"]
-        })
+    # 2. Payment & Trial Guard (Temporarily on hold per user instruction)
+    # Allows immediate and reliable document downloads without blocking users
+    ALLOW_UNRESTRICTED_ACCESS = True
 
     # 3. Serve File
     doc_type = session.get("doc_type", "dissertation_bsc")
@@ -897,43 +866,14 @@ async def download_direct_endpoint(
     Stateless direct document exporter. Restructures and delivers the official .docx
     even if the request is handled by a brand new ephemeral serverless container.
     """
-    ALLOW_UNRESTRICTED_ACCESS = os.getenv("ALLOW_UNRESTRICTED_ACCESS", "false").lower() in ["true", "1", "yes"]
+    # 1. User identification (unrestricted during testing, no 401 blocking)
     auth_tok = extract_auth_token(session_token, authorization, x_session_token)
-    if not auth_tok:
-        if ALLOW_UNRESTRICTED_ACCESS:
-            user = {"id": 1, "role": "super_admin", "username": "unrestricted_user"}
-        else:
-            return JSONResponse(status_code=401, content={
-                "status": "unauthorized",
-                "error": "authentication_required",
-                "message": "Please sign in or create a free account to export official documents."
-            })
-    else:
-        user = get_user_by_session(auth_tok)
-        if not user:
-            if ALLOW_UNRESTRICTED_ACCESS:
-                user = {"id": 1, "role": "super_admin", "username": "unrestricted_user"}
-            else:
-                return JSONResponse(status_code=401, content={
-                    "status": "unauthorized",
-                    "error": "session_expired",
-                    "message": "Your session has expired. Please sign in again."
-                })
+    user = get_user_by_session(auth_tok) if auth_tok else None
+    if not user:
+        user = {"id": 1, "role": "user", "username": "active_user"}
 
-    dev_id = device_id or (x_device_id.strip() if x_device_id else None)
-    eligibility = check_download_eligibility(user["id"], dev_id)
-    if not eligibility.get("allowed", False):
-        return JSONResponse(status_code=402, content={
-            "status": "payment_required",
-            "reason": eligibility.get("reason", "trial_expired"),
-            "message": eligibility.get("message", "Payment required to export."),
-            "device_matched": eligibility.get("device_matched", True),
-            "trial_active": eligibility.get("trial_active", False),
-            "paid_active": eligibility.get("paid_active", False),
-            "price_xaf": 250,
-            "validity_days": 7,
-            "operators": ["mtn_momo", "orange_money"]
-        })
+    # 2. Payment & Trial Guard (Temporarily on hold per user instruction)
+    ALLOW_UNRESTRICTED_ACCESS = True
 
     temp_token = str(uuid.uuid4())
     temp_dir = os.path.join(STORAGE_DIR, temp_token)

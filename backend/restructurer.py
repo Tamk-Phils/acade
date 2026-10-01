@@ -1694,35 +1694,36 @@ def find_true_body_start_index(paragraphs: List[Dict[str, Any]], doc_type: str =
         is_intro = (t.upper() in ["INTRODUCTION", "1. INTRODUCTION", "1.0 INTRODUCTION"])
 
         if is_ch1 or is_sec1 or is_task1 or is_intro:
+            # Skip draft TOC entries (ending with dots + page number or tabs)
             if '\t' in t or re.search(r'\.{3,}\s*\d+', t) or re.search(r'\d+$', t):
                 continue
             if is_standalone_prelim_header(t):
                 continue
 
-            subsequent = paragraphs[idx+1:idx+16]
-            has_prelim_leak = any(
-                is_standalone_prelim_header(sp.get("text", "")) and
+            # Check if subsequent paragraphs are immediately followed by draft cover pages
+            subsequent = paragraphs[idx+1:idx+6]
+            is_immediate_cover = any(
                 any(k in sp.get("text", "").upper() for k in [
-                    'REPUBLIC OF CAMEROON', 'DECLARATION OF ORIGINALITY', 'TABLE OF CONTENTS',
-                    'CERTIFICATION OF CORRECTIONS', 'THE UNIVERSITY OF BAMENDA'
-                ])
+                    'REPUBLIC OF CAMEROON', 'REPUBLIQUE DU CAMEROUN', 'PEACE - WORK', 'PEACE – WORK',
+                    'DECLARATION OF ORIGINALITY', 'CERTIFICATION OF CORRECTIONS'
+                ]) and len(sp.get("text", "").strip()) < 80
                 for sp in subsequent
             )
             has_prose = any(
-                len(sp.get("text", "").strip()) > 70 and not is_standalone_prelim_header(sp.get("text", ""))
+                len(sp.get("text", "").strip()) > 35 and not is_standalone_prelim_header(sp.get("text", ""))
                 for sp in subsequent
             )
 
-            if not has_prelim_leak and has_prose:
+            if not is_immediate_cover and (has_prose or is_sec1 or is_ch1):
                 return idx
 
+    # Fallback to first non-preliminary substantive paragraph
     for idx, p in enumerate(paragraphs):
         t = p.get("text", "").strip()
-        if len(t) > 120 and not is_standalone_prelim_header(t):
-            subsequent = paragraphs[idx:idx+10]
+        if len(t) > 60 and not is_standalone_prelim_header(t):
+            subsequent = paragraphs[idx:idx+5]
             if not any(
-                is_standalone_prelim_header(sp.get("text", "")) and
-                any(k in sp.get("text", "").upper() for k in ['REPUBLIC OF CAMEROON', 'THE UNIVERSITY OF BAMENDA'])
+                any(k in sp.get("text", "").upper() for k in ['REPUBLIC OF CAMEROON', 'PEACE - WORK', 'DECLARATION OF ORIGINALITY'])
                 for sp in subsequent
             ):
                 return idx
@@ -1980,9 +1981,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         txt = p.get("text", "").strip()
         if not txt:
             continue
-        if is_standalone_prelim_header(txt):
-            continue
-        if re.search(r'\t\s*\d+\s*$', txt) or re.search(r'\.{3,}\s*\d+\s*$', txt):
+        if re.search(r'\.{4,}\s*\d+\s*$', txt):
             continue
         body_paras.append(p)
 
@@ -2163,6 +2162,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     if not raw_t and not has_drawing:
                         continue
 
+                    # Strip trailing chapter headings stuck to the end of prose paragraphs (prevents Chapter appearing at the end of previous chapter)
+                    trailing_ch = re.search(r'(?:\.\s*|\s+)(CHAPTER\s+[0-9]+[A-Z\s\-:()]+)$', raw_t, re.IGNORECASE)
+                    if trailing_ch and len(raw_t) > len(trailing_ch.group(1)) + 20:
+                        raw_t = raw_t[:trailing_ch.start(1)].strip()
+
                     if has_drawing:
                         _transfer_and_format_drawing_paragraph(
                             child, source_docx, doc, rules, current_chapter, fig_counter, next_raw_t=next_raw_t or raw_t
@@ -2170,9 +2174,8 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         prev_raw_t = raw_t
                         continue
 
-                    if is_standalone_prelim_header(raw_t):
-                        continue
-                    if re.search(r'\t\s*\d+\s*$', raw_t) or re.search(r'\.{3,}\s*\d+\s*$', raw_t):
+                    # Only drop blatant TOC dot leader lines (e.g. "Chapter 1 ....... 1")
+                    if re.search(r'\.{4,}\s*\d+\s*$', raw_t):
                         continue
 
                     # Explicit figure caption
@@ -2234,6 +2237,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         explicit_ch_num = CH_NUM_MAP.get(num_str, int(num_str) if num_str.isdigit() else 1)
 
                     if explicit_ch_num is not None:
+                        if explicit_ch_num == current_chapter:
+                            # Chapter already started - avoid repeating title
+                            prev_raw_t = raw_t
+                            continue
+
                         ch_sub = ch_match.group(2).strip().upper() if ch_match.group(2) else ""
                         if not ch_sub and next_raw_t:
                             if not re.match(r'^\d+\.\d+', next_raw_t) and not re.match(r'^(?:CHAPTER|CHAPITRE|Table|Figure)\b', next_raw_t, re.IGNORECASE) and len(next_raw_t) < 80:
@@ -2310,9 +2318,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     if in_references:
                         format_p(p_elem, raw_t, is_ref=True)
                     elif is_h:
-                        if lvl == 1 or re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
-                            format_p(p_elem, raw_t, is_chapter=True)
-                        elif lvl == 2:
+                        if re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
+                            continue
+                        if raw_t.upper() in ["INTRODUCTION", "LITERATURE REVIEW", "MATERIALS AND METHODS", "RESULTS AND DISCUSSION", "RESULTS AND DISCUSSIONS", "CONCLUSION AND RECOMMENDATIONS"]:
+                            continue
+                        if lvl == 1 or lvl == 2:
                             format_p(p_elem, raw_t, is_sub1=True)
                         else:
                             format_p(p_elem, raw_t, is_sub2=True)
@@ -2329,6 +2339,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     continue
                 raw_t = p_info["text"].strip()
                 next_p_text = body_paras[p_idx + 1]["text"].strip() if p_idx + 1 < len(body_paras) else ""
+
+                # Strip trailing chapter headings stuck to prose paragraphs
+                trailing_ch = re.search(r'(?:\.\s*|\s+)(CHAPTER\s+[0-9]+[A-Z\s\-:()]+)$', raw_t, re.IGNORECASE)
+                if trailing_ch and len(raw_t) > len(trailing_ch.group(1)) + 20:
+                    raw_t = raw_t[:trailing_ch.start(1)].strip()
 
                 if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
                     p_elem = doc.add_paragraph()
@@ -2356,6 +2371,9 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     explicit_ch_num = CH_NUM_MAP.get(num_str, int(num_str) if num_str.isdigit() else 1)
 
                 if explicit_ch_num is not None:
+                    if explicit_ch_num == current_chapter:
+                        continue
+
                     ch_sub = ch_match.group(2).strip().upper() if ch_match.group(2) else ""
                     if not ch_sub and next_p_text:
                         if not re.match(r'^\d+\.\d+', next_p_text) and not re.match(r'^(?:CHAPTER|CHAPITRE|Table|Figure)\b', next_p_text, re.IGNORECASE) and len(next_p_text) < 80:
@@ -2414,9 +2432,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     format_p(p_elem, raw_t, is_ref=True)
                 elif p_info.get("is_heading"):
                     lvl = p_info.get("level", 1)
-                    if lvl == 1 or re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
-                        format_p(p_elem, raw_t, is_chapter=True)
-                    elif lvl == 2:
+                    if re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
+                        continue
+                    if raw_t.upper() in ["INTRODUCTION", "LITERATURE REVIEW", "MATERIALS AND METHODS", "RESULTS AND DISCUSSION", "RESULTS AND DISCUSSIONS", "CONCLUSION AND RECOMMENDATIONS"]:
+                        continue
+                    if lvl == 1 or lvl == 2:
                         format_p(p_elem, raw_t, is_sub1=True)
                     else:
                         format_p(p_elem, raw_t, is_sub2=True)
