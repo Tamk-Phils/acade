@@ -217,6 +217,9 @@ class ParsedDocument:
         self.has_appendices: bool = False
         self.extracted_tables: List[Dict[str, Any]] = []
         self.unlabeled_figures: List[Dict[str, Any]] = []
+        self.abbreviations: List[Any] = []
+        self.prelim_tables_list: List[str] = []
+        self.prelim_figures_list: List[str] = []
 
 
 def parse_docx(file_path: str) -> ParsedDocument:
@@ -238,25 +241,79 @@ def parse_docx(file_path: str) -> ParsedDocument:
     fonts_set = set()
     spacings_set = set()
 
+    in_lot = False
+    in_lof = False
+    in_abbrev = False
+
     for idx, p in enumerate(doc.paragraphs):
         txt = p.text.strip()
         if not txt:
             continue
 
         all_text.append(txt)
+        txt_upper = txt.upper()
         style_name = p.style.name if p.style else "Normal"
         
+        # State tracking for preliminary lists
+        if "LIST OF TABLES" in txt_upper:
+            in_lot = True
+            in_lof = False
+            in_abbrev = False
+            continue
+        elif "LIST OF FIGURES" in txt_upper:
+            in_lot = False
+            in_lof = True
+            in_abbrev = False
+            continue
+        elif any(k in txt_upper for k in ["LIST OF ABBREVIATIONS", "ABBREVIATIONS AND SYMBOLS", "LIST OF ACRONYMS"]):
+            in_lot = False
+            in_lof = False
+            in_abbrev = True
+            continue
+        elif re.match(r'^(?:CHAPTER|CHAPITRE)\s+(?:1|I|ONE)\b', txt_upper) or re.match(r'^1\.[01]\s', txt_upper):
+            in_lot = False
+            in_lof = False
+            in_abbrev = False
+
+        if in_lot:
+            clean_lot = re.sub(r'[\.\s\t_]+\d+\s*$', '', txt).strip()
+            if clean_lot and ("Table" in clean_lot or re.match(r'^\d+\.\d+', clean_lot)):
+                parsed.prelim_tables_list.append(clean_lot)
+            continue
+        elif in_lof:
+            clean_lof = re.sub(r'[\.\s\t_]+\d+\s*$', '', txt).strip()
+            if clean_lof and ("Figure" in clean_lof or "Fig" in clean_lof or re.match(r'^\d+\.\d+', clean_lof)):
+                parsed.prelim_figures_list.append(clean_lof)
+            continue
+        elif in_abbrev:
+            ab_m = re.match(r'^([A-Za-z0-9/&\s\-]{2,18})\s*(?:–|—|-|:|\t|\s{2,})\s*(.+)$', txt)
+            if ab_m:
+                acronym = ab_m.group(1).strip()
+                meaning = ab_m.group(2).strip()
+                if len(acronym) < 18 and len(meaning) > 2:
+                    parsed.abbreviations.append((acronym, meaning))
+            continue
+
         is_heading = False
         level = 0
-        if "Heading 1" in style_name or "Chapter" in txt[:20] or (p.runs and p.runs[0].bold and p.runs[0].font.size and p.runs[0].font.size.pt >= 14):
-            is_heading = True
-            level = 1
-        elif "Heading 2" in style_name or re.match(r'^\d+\.\d+\s', txt):
-            is_heading = True
-            level = 2
-        elif "Heading 3" in style_name or re.match(r'^\d+\.\d+\.\d+\s', txt):
-            is_heading = True
-            level = 3
+        is_short = len(txt) < 180 and not (txt.count('.') > 2 and txt.endswith('.'))
+        if is_short:
+            if re.match(r'^(?:CHAPTER|CHAPITRE)\s+\d+', txt, re.IGNORECASE) or ("Heading 1" in style_name and len(txt) < 60):
+                is_heading = True
+                level = 1
+            elif re.match(r'^\d+\.\d+(?:\.\d+)*\.?\s*', txt):
+                num_dots = txt.split()[0].rstrip('.').count('.')
+                is_heading = True
+                level = min(4, num_dots + 1)
+            elif "Heading 2" in style_name:
+                is_heading = True
+                level = 2
+            elif "Heading 3" in style_name:
+                is_heading = True
+                level = 3
+            elif any(r.bold for r in p.runs) and all(r.bold for r in p.runs if r.text.strip()) and len(txt) < 90 and not txt.endswith('.'):
+                is_heading = True
+                level = 2
 
         for run in p.runs:
             if run.font.name:
@@ -369,22 +426,67 @@ def parse_pdf(file_path: str) -> ParsedDocument:
     parsed.page_count = len(reader.pages)
 
     all_text = []
+    in_lot = False
+    in_lof = False
+    in_abbrev = False
+
     for i, page in enumerate(reader.pages):
         txt = page.extract_text() or ""
         lines = [l.strip() for l in txt.split("\n") if l.strip()]
         for line in lines:
             all_text.append(line)
+            line_upper = line.upper()
+
+            if "LIST OF TABLES" in line_upper:
+                in_lot = True
+                in_lof = False
+                in_abbrev = False
+                continue
+            elif "LIST OF FIGURES" in line_upper:
+                in_lot = False
+                in_lof = True
+                in_abbrev = False
+                continue
+            elif any(k in line_upper for k in ["LIST OF ABBREVIATIONS", "ABBREVIATIONS AND SYMBOLS", "LIST OF ACRONYMS"]):
+                in_lot = False
+                in_lof = False
+                in_abbrev = True
+                continue
+            elif re.match(r'^(?:CHAPTER|CHAPITRE)\s+(?:1|I|ONE)\b', line_upper) or re.match(r'^1\.[01]\s', line_upper):
+                in_lot = False
+                in_lof = False
+                in_abbrev = False
+
+            if in_lot:
+                clean_lot = re.sub(r'[\.\s\t_]+\d+\s*$', '', line).strip()
+                if clean_lot and ("Table" in clean_lot or re.match(r'^\d+\.\d+', clean_lot)):
+                    parsed.prelim_tables_list.append(clean_lot)
+                continue
+            elif in_lof:
+                clean_lof = re.sub(r'[\.\s\t_]+\d+\s*$', '', line).strip()
+                if clean_lof and ("Figure" in clean_lof or "Fig" in clean_lof or re.match(r'^\d+\.\d+', clean_lof)):
+                    parsed.prelim_figures_list.append(clean_lof)
+                continue
+            elif in_abbrev:
+                ab_m = re.match(r'^([A-Za-z0-9/&\s\-]{2,18})\s*(?:–|—|-|:|\t|\s{2,})\s*(.+)$', line)
+                if ab_m:
+                    acronym = ab_m.group(1).strip()
+                    meaning = ab_m.group(2).strip()
+                    if len(acronym) < 18 and len(meaning) > 2:
+                        parsed.abbreviations.append((acronym, meaning))
+                continue
+
             is_heading = False
             level = 0
-            if re.match(r'^(CHAPTER\s+\d+|CHAPITRE\s+\d+)', line, re.IGNORECASE):
-                is_heading = True
-                level = 1
-            elif re.match(r'^\d+\.\d+\s+[A-Z]', line):
-                is_heading = True
-                level = 2
-            elif re.match(r'^\d+\.\d+\.\d+\s+[A-Z]', line):
-                is_heading = True
-                level = 3
+            is_short = len(line) < 180 and not (line.count('.') > 2 and line.endswith('.'))
+            if is_short:
+                if re.match(r'^(?:CHAPTER\s+\d+|CHAPITRE\s+\d+)', line, re.IGNORECASE):
+                    is_heading = True
+                    level = 1
+                elif re.match(r'^\d+\.\d+(?:\.\d+)*\.?\s*', line):
+                    num_dots = line.split()[0].rstrip('.').count('.')
+                    is_heading = True
+                    level = min(4, num_dots + 1)
 
             para_info = {
                 "text": line,

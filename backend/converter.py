@@ -99,12 +99,13 @@ def generate_page_previews(pdf_path: str, preview_dir: str, dpi: int = 120, max_
 
 
 def _get_font(size: int = 14, bold: bool = False) -> ImageFont.ImageFont:
-    """Loads system Serif or Sans TTF font with fallback to Pillow default."""
+    """Loads system Serif or Sans TTF font prioritizing LiberationSerif (metric-identical to Times New Roman)."""
     candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+        "/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     ]
     for p in candidates:
         if os.path.isfile(p):
@@ -140,6 +141,41 @@ def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: Image
         if current_line:
             lines.append(" ".join(current_line))
     return lines
+
+
+def _draw_justified_line(
+    draw: ImageDraw.ImageDraw,
+    line: str,
+    font: ImageFont.ImageFont,
+    x_left: int,
+    max_width: int,
+    y: int,
+    fill: str = "#1E293B",
+    is_last_line: bool = False
+):
+    """Draws a line of text justified to max_width by distributing space between words."""
+    words = line.strip().split()
+    if is_last_line or len(words) <= 1:
+        draw.text((x_left, y), line, font=font, fill=fill)
+        return
+
+    word_widths = [draw.textbbox((0, 0), w, font=font)[2] - draw.textbbox((0, 0), w, font=font)[0] for w in words]
+    total_word_w = sum(word_widths)
+    space_needed = max_width - total_word_w
+    if space_needed <= 0 or space_needed > len(words) * 35:
+        draw.text((x_left, y), line, font=font, fill=fill)
+        return
+
+    num_gaps = len(words) - 1
+    base_space = space_needed // num_gaps
+    extra_space = space_needed % num_gaps
+
+    cur_x = x_left
+    for idx, (word, w_w) in enumerate(zip(words, word_widths)):
+        draw.text((cur_x, y), word, font=font, fill=fill)
+        cur_x += w_w
+        if idx < num_gaps:
+            cur_x += base_space + (1 if idx < extra_space else 0)
 
 
 def generate_pure_python_previews(
@@ -459,9 +495,50 @@ def generate_pure_python_previews(
                     curr_y += 8
                 continue
 
+            # TOC line rendering with dot leaders
+            if ("\t" in txt or re.search(r'\.{3,}\s*\d+$', txt)) and idx > 1:
+                parts = txt.split("\t") if "\t" in txt else re.split(r'\.{3,}\s*', txt)
+                t_title = parts[0].strip()
+                t_page = parts[-1].strip() if len(parts) > 1 else ""
+                is_major_toc = any(t_title.upper().startswith(ch) for ch in ["CHAPTER", "CHAPITRE", "PRELIMINARY", "REFERENCES", "APPENDICES"])
+                t_font = f_bold if is_major_toc else f_normal
+
+                if curr_y + 26 > 1280 and curr_y > 150:
+                    finish_page(current_img, page_counter)
+                    page_counter += 1
+                    current_img, draw, curr_y = start_new_page()
+
+                draw.text((left_margin, curr_y), t_title, font=t_font, fill="black")
+                if t_page:
+                    page_bbox = draw.textbbox((0, 0), t_page, font=t_font)
+                    page_w = page_bbox[2] - page_bbox[0]
+                    draw.text((right_margin - page_w, curr_y), t_page, font=t_font, fill="black")
+
+                    title_bbox = draw.textbbox((0, 0), t_title, font=t_font)
+                    t_w = title_bbox[2] - title_bbox[0]
+                    dot_start = left_margin + t_w + 10
+                    dot_end = right_margin - page_w - 10
+                    if dot_end > dot_start:
+                        dot_str = ". " * max(1, (dot_end - dot_start) // 12)
+                        draw.text((dot_start, curr_y), dot_str, font=f_normal, fill="#94A3B8")
+                curr_y += 22
+                continue
+
             p_style = getattr(p.style, "name", "Normal")
-            is_heading = "Heading" in p_style or (txt.isupper() and len(txt) < 80)
-            p_font = f_h1 if ("Heading 1" in p_style or (txt.isupper() and len(txt) < 50)) else (f_h2 if "Heading" in p_style else f_normal)
+            is_ch = bool(re.match(r'^(?:CHAPTER|CHAPITRE)\s+\d+', txt, re.IGNORECASE))
+            is_sec = bool(re.match(r'^\d+\.\d+(?:\.\d+)*\.?\s*', txt)) and len(txt) < 180 and not (txt.count('.') > 2 and txt.endswith('.'))
+            is_style_h = "Heading" in p_style and len(txt) < 180
+            is_run_bold = bool(p.runs and any(r.bold for r in p.runs) and len(txt) < 90 and not txt.endswith('.'))
+            is_cap = bool(re.match(r'^(?:Figure|Fig\.?|Table|Tableau)\s*(?:\d+|[IVXLCDM]+)?[:.\s]', txt, re.IGNORECASE))
+
+            is_heading = is_ch or is_sec or is_style_h or (txt.isupper() and len(txt) < 70) or is_run_bold or is_cap
+
+            if is_ch:
+                p_font = f_h1
+            elif is_sec or is_style_h or is_run_bold or is_cap:
+                p_font = f_h2
+            else:
+                p_font = f_normal
 
             # Prevent preliminary headings from ever being boxed as titles
             is_prelim_header = any(k in txt.upper() for k in [
@@ -493,7 +570,7 @@ def generate_pure_python_previews(
 
             wrapped = _wrap_text(txt, p_font, max_text_w, draw)
             line_h = 24 if is_heading else 20
-            p_needed_h = len(wrapped) * line_h + (12 if is_heading else 8)
+            p_needed_h = len(wrapped) * line_h + (14 if is_heading else 8)
 
             if curr_y + p_needed_h > 1280 and curr_y > 150:
                 finish_page(current_img, page_counter)
@@ -502,14 +579,23 @@ def generate_pure_python_previews(
                     break
                 current_img, draw, curr_y = start_new_page()
 
-            align = "center" if (is_cover_or_title or (txt.isupper() and len(txt) < 60)) else "left"
-            for line in wrapped:
+            if is_cover_or_title or (txt.isupper() and len(txt) < 60) or is_ch or is_cap:
+                align = "center"
+            elif is_heading:
+                align = "left"
+            else:
+                align = "justify"
+
+            for l_idx, line in enumerate(wrapped):
+                is_last = (l_idx == len(wrapped) - 1)
                 if align == "center":
                     draw.text((W // 2, curr_y), line, font=p_font, fill="black", anchor="ma")
-                else:
-                    draw.text((left_margin, curr_y), line, font=p_font, fill="#1E293B")
+                elif align == "left":
+                    draw.text((left_margin, curr_y), line, font=p_font, fill="#0F172A")
+                elif align == "justify":
+                    _draw_justified_line(draw, line, p_font, left_margin, max_text_w, curr_y, fill="#1E293B", is_last_line=is_last)
                 curr_y += line_h
-            curr_y += 10 if is_heading else 6
+            curr_y += 12 if is_heading else 6
 
     if curr_y > 100:
         finish_page(current_img, page_counter)
@@ -572,6 +658,14 @@ def generate_document_previews(
     if is_libreoffice_available():
         try:
             out_pdf_path = convert_docx_to_pdf(docx_path, output_dir)
+            if out_pdf_path and os.path.exists(out_pdf_path):
+                try:
+                    from backend.restructurer import sync_toc_page_numbers
+                    if sync_toc_page_numbers(docx_path, out_pdf_path):
+                        # TOC was updated with exact page numbers, re-convert to synchronize PDF
+                        out_pdf_path = convert_docx_to_pdf(docx_path, output_dir)
+                except Exception as sync_err:
+                    print(f"[AcadFormat Converter] TOC sync warning: {sync_err}")
         except Exception as lo_err:
             print(f"[AcadFormat Converter] LibreOffice conversion skipped: {lo_err}")
 

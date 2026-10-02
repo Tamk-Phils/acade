@@ -12,7 +12,7 @@ from docx.shared import Inches, Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import parse_xml, OxmlElement
-from docx.oxml.ns import nsdecls, qn
+from docx.oxml.ns import nsdecls, qn, nsmap
 from backend.models import DocumentMetadata, ReformatRequest, GroupMember
 from backend.parser import ParsedDocument
 from backend.academic_data import UBA_ESTABLISHMENTS, resolve_department_and_option
@@ -191,6 +191,93 @@ def parse_custom_formatting_rules(meta: Optional[DocumentMetadata] = None, req: 
             rules.auto_label_unlabeled_figures = True
 
     return rules
+
+def ensure_run_fonts(run, font_name: str = "Times New Roman"):
+    """Guarantees OpenXML w:ascii, w:hAnsi, w:cs, and w:eastAsia are explicitly set on the run."""
+    run.font.name = font_name
+    rPr = run._r.get_or_add_rPr()
+    rFonts = rPr.get_or_add_rFonts()
+    rFonts.set(qn('w:ascii'), font_name)
+    rFonts.set(qn('w:hAnsi'), font_name)
+    rFonts.set(qn('w:cs'), font_name)
+    rFonts.set(qn('w:eastAsia'), font_name)
+    for attr in ['asciiTheme', 'hAnsiTheme', 'cstheme', 'eastAsiaTheme']:
+        if qn(f'w:{attr}') in rFonts.attrib:
+            del rFonts.attrib[qn(f'w:{attr}')]
+
+def safe_xpath(elem, xpath_str: str):
+    """Executes xpath on either BaseOxmlElement or raw lxml._Element safely."""
+    try:
+        return elem.xpath(xpath_str, namespaces=nsmap)
+    except TypeError:
+        return elem.xpath(xpath_str)
+
+def configure_document_styles(doc: docx.Document, rules: CustomFormattingRules):
+    """Configures global docDefaults and standard Heading styles for rigorous academic typography."""
+    # 1. Update docDefaults
+    doc_defaults = safe_xpath(doc.styles.element, './/w:docDefaults')
+    if doc_defaults:
+        rPr_nodes = safe_xpath(doc_defaults[0], './/w:rPrDefault/w:rPr')
+        if rPr_nodes:
+            rFonts_nodes = safe_xpath(rPr_nodes[0], './/w:rFonts')
+            if rFonts_nodes:
+                rf = rFonts_nodes[0]
+                for attr in ['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme']:
+                    if qn(f'w:{attr}') in rf.attrib:
+                        del rf.attrib[qn(f'w:{attr}')]
+                rf.set(qn('w:ascii'), rules.font_name)
+                rf.set(qn('w:hAnsi'), rules.font_name)
+                rf.set(qn('w:cs'), rules.font_name)
+                rf.set(qn('w:eastAsia'), rules.font_name)
+
+    # 2. Update Normal style
+    try:
+        normal = doc.styles['Normal']
+        normal.font.name = rules.font_name
+        normal.font.size = Pt(rules.font_size_pt)
+        normal.paragraph_format.line_spacing = rules.line_spacing
+        normal.paragraph_format.space_after = Pt(6)
+        normal.paragraph_format.space_before = Pt(0)
+        normal.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        pPr = normal.element.get_or_add_pPr()
+        jc = pPr.get_or_add_jc()
+        jc.set(qn('w:val'), 'both')
+        rf = normal.element.get_or_add_rPr().get_or_add_rFonts()
+        for attr in ['asciiTheme', 'hAnsiTheme', 'cstheme']:
+            if qn(f'w:{attr}') in rf.attrib:
+                del rf.attrib[qn(f'w:{attr}')]
+        rf.set(qn('w:ascii'), rules.font_name)
+        rf.set(qn('w:hAnsi'), rules.font_name)
+        rf.set(qn('w:cs'), rules.font_name)
+    except Exception:
+        pass
+
+    # 3. Configure Heading 1, Heading 2, Heading 3
+    for s_name, size, is_center in [
+        ('Heading 1', rules.heading1_size_pt, True),
+        ('Heading 2', rules.heading2_size_pt, False),
+        ('Heading 3', rules.font_size_pt, False)
+    ]:
+        try:
+            h_style = doc.styles[s_name]
+            h_style.font.name = rules.font_name
+            h_style.font.size = Pt(size)
+            h_style.font.bold = True
+            h_style.font.color.rgb = RGBColor(0, 0, 0)
+            h_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_center else WD_ALIGN_PARAGRAPH.LEFT
+            h_style.paragraph_format.keep_with_next = True
+            pPr = h_style.element.get_or_add_pPr()
+            jc = pPr.get_or_add_jc()
+            jc.set(qn('w:val'), 'center' if is_center else 'left')
+            rf = h_style.element.get_or_add_rPr().get_or_add_rFonts()
+            for attr in ['asciiTheme', 'hAnsiTheme', 'cstheme']:
+                if qn(f'w:{attr}') in rf.attrib:
+                    del rf.attrib[qn(f'w:{attr}')]
+            rf.set(qn('w:ascii'), rules.font_name)
+            rf.set(qn('w:hAnsi'), rules.font_name)
+            rf.set(qn('w:cs'), rules.font_name)
+        except Exception:
+            pass
 
 def set_cell_margins(cell, top=60, bottom=60, left=60, right=60):
     """Set zero or tight margins for header table cells."""
@@ -1392,6 +1479,14 @@ def build_table_of_contents(
     tables_present = bool(getattr(parsed, "tables_count", 0) > 0 or getattr(parsed, "extracted_tables", None))
     figures_present = bool(getattr(parsed, "figures_count", 0) > 0)
 
+    has_lot = bool(getattr(parsed, "prelim_tables_list", None) or getattr(parsed, "tables_count", 0) > 0 or getattr(parsed, "extracted_tables", None))
+    has_lof = bool(getattr(parsed, "prelim_figures_list", None) or getattr(parsed, "figures_count", 0) > 0)
+    has_abbrevs = bool(getattr(parsed, "abbreviations", None))
+
+    romans_list = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii", "xiii", "xiv", "xv", "xvi", "xvii"]
+    def get_roman(idx):
+        return romans_list[idx] if idx < len(romans_list) else str(idx)
+
     # 1. Dynamic Preliminaries with accurate lower-Roman pagination
     if doc_type == "assignment":
         toc_items = [
@@ -1399,11 +1494,16 @@ def build_table_of_contents(
             ("Acknowledgements", "ii", 1, False),
             ("Table of Contents", "iii", 1, False),
         ]
-        if tables_present:
-            toc_items.append(("List of Tables", "iv", 1, False))
-        if figures_present:
-            f_num = "v" if tables_present else "iv"
-            toc_items.append(("List of Figures", f_num, 1, False))
+        next_roman_idx = 4
+        if has_lot:
+            toc_items.append(("List of Tables", get_roman(next_roman_idx), 1, False))
+            next_roman_idx += 1
+        if has_lof:
+            toc_items.append(("List of Figures", get_roman(next_roman_idx), 1, False))
+            next_roman_idx += 1
+        if has_abbrevs:
+            toc_items.append(("List of Abbreviations & Acronyms", get_roman(next_roman_idx), 1, False))
+            next_roman_idx += 1
         toc_items.append(("ASSIGNMENT TASKS & QUESTIONS", "1", 0, True))
 
     elif doc_type == "internship":
@@ -1416,14 +1516,15 @@ def build_table_of_contents(
             ("Table of Contents", "vi", 1, False),
         ]
         next_roman_idx = 7
-        romans_map = {7: "vii", 8: "viii", 9: "ix", 10: "x", 11: "xi"}
-        if tables_present:
-            toc_items.append(("List of Tables", romans_map.get(next_roman_idx, "vii"), 1, False))
+        if has_lot:
+            toc_items.append(("List of Tables", get_roman(next_roman_idx), 1, False))
             next_roman_idx += 1
-        if figures_present:
-            toc_items.append(("List of Figures", romans_map.get(next_roman_idx, "viii"), 1, False))
+        if has_lof:
+            toc_items.append(("List of Figures", get_roman(next_roman_idx), 1, False))
             next_roman_idx += 1
-        toc_items.append(("List of Abbreviations & Acronyms", romans_map.get(next_roman_idx, "ix"), 1, False))
+        if has_abbrevs:
+            toc_items.append(("List of Abbreviations & Acronyms", get_roman(next_roman_idx), 1, False))
+            next_roman_idx += 1
 
     elif doc_type == "proposal":
         toc_items = [
@@ -1434,14 +1535,15 @@ def build_table_of_contents(
             ("Table of Contents", "v", 1, False),
         ]
         next_roman_idx = 6
-        romans_map = {6: "vi", 7: "vii", 8: "viii", 9: "ix", 10: "x"}
-        if tables_present:
-            toc_items.append(("List of Tables", romans_map.get(next_roman_idx, "vi"), 1, False))
+        if has_lot:
+            toc_items.append(("List of Tables", get_roman(next_roman_idx), 1, False))
             next_roman_idx += 1
-        if figures_present:
-            toc_items.append(("List of Figures", romans_map.get(next_roman_idx, "vii"), 1, False))
+        if has_lof:
+            toc_items.append(("List of Figures", get_roman(next_roman_idx), 1, False))
             next_roman_idx += 1
-        toc_items.append(("List of Abbreviations & Acronyms", romans_map.get(next_roman_idx, "viii"), 1, False))
+        if has_abbrevs:
+            toc_items.append(("List of Abbreviations & Acronyms", get_roman(next_roman_idx), 1, False))
+            next_roman_idx += 1
 
     else:
         # Dissertation / Thesis standard
@@ -1456,14 +1558,15 @@ def build_table_of_contents(
             ("Table of Contents", "viii", 1, False),
         ]
         next_roman_idx = 9
-        romans_map = {9: "ix", 10: "x", 11: "xi", 12: "xii"}
-        if tables_present:
-            toc_items.append(("List of Tables", romans_map.get(next_roman_idx, "ix"), 1, False))
+        if has_lot:
+            toc_items.append(("List of Tables", get_roman(next_roman_idx), 1, False))
             next_roman_idx += 1
-        if figures_present:
-            toc_items.append(("List of Figures", romans_map.get(next_roman_idx, "x"), 1, False))
+        if has_lof:
+            toc_items.append(("List of Figures", get_roman(next_roman_idx), 1, False))
             next_roman_idx += 1
-        toc_items.append(("List of Abbreviations & Acronyms", romans_map.get(next_roman_idx, "xi"), 1, False))
+        if has_abbrevs:
+            toc_items.append(("List of Abbreviations & Acronyms", get_roman(next_roman_idx), 1, False))
+            next_roman_idx += 1
 
     # 2. Extract Substantive Body Chapters & Sections dynamically
     seen_chapters = set()
@@ -1604,6 +1707,7 @@ def build_table_of_contents(
 
     for title, page_str, level, is_major in toc_items:
         p_row = doc.add_paragraph()
+        p_row.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p_row.paragraph_format.line_spacing = 1.15
         p_row.paragraph_format.space_before = Pt(3 if is_major else 1)
         p_row.paragraph_format.space_after = Pt(2)
@@ -1617,11 +1721,13 @@ def build_table_of_contents(
             r_lt.font.name = rules.font_name
             r_lt.font.size = Pt(11.5)
             r_lt.font.bold = True
+            ensure_run_fonts(r_lt, rules.font_name)
         else:
             indent = "    " * (level - 1) if level > 1 else "  "
             r_lt = p_row.add_run(indent + left_text)
             r_lt.font.name = rules.font_name
             r_lt.font.size = Pt(11)
+            ensure_run_fonts(r_lt, rules.font_name)
 
         if page_str:
             r_p = p_row.add_run(f"\t{page_str}")
@@ -1629,6 +1735,256 @@ def build_table_of_contents(
             r_p.font.size = Pt(11)
             if is_major:
                 r_p.font.bold = True
+            ensure_run_fonts(r_p, rules.font_name)
+
+    doc.add_page_break()
+
+
+def build_list_of_tables(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None):
+    """Builds the formal LIST OF TABLES preliminary page with dot leaders to right margin."""
+    rules = custom_rules or CustomFormattingRules()
+    p_h = doc.add_paragraph()
+    p_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_h.paragraph_format.space_before = Pt(20)
+    p_h.paragraph_format.space_after = Pt(24)
+    r_h = p_h.add_run("LIST OF TABLES")
+    r_h.font.bold = True
+    r_h.font.size = Pt(14)
+    ensure_run_fonts(r_h, rules.font_name)
+
+    items = getattr(parsed, "prelim_tables_list", [])
+    if not items and (getattr(parsed, "tables_count", 0) > 0 or getattr(parsed, "extracted_tables", None)):
+        count = max(parsed.tables_count, len(getattr(parsed, "extracted_tables", [])))
+        for i in range(count):
+            items.append(f"Table 3.{i+1}: Specifications and Empirical Matrix\t{15 + i*3}")
+
+    for item in items:
+        p_row = doc.add_paragraph()
+        p_row.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p_row.paragraph_format.line_spacing = 1.15
+        p_row.paragraph_format.space_before = Pt(2)
+        p_row.paragraph_format.space_after = Pt(2)
+        p_row.paragraph_format.tab_stops.add_tab_stop(Cm(15.0), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+
+        page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', item)
+        pg_val = page_m.group(1) if page_m else "15"
+        clean_title = re.sub(r'[\.\s\t_]+\d+\s*$', '', item).strip()
+
+        r_t = p_row.add_run(clean_title)
+        r_t.font.size = Pt(11)
+        ensure_run_fonts(r_t, rules.font_name)
+
+        r_p = p_row.add_run(f"\t{pg_val}")
+        r_p.font.size = Pt(11)
+        ensure_run_fonts(r_p, rules.font_name)
+
+    doc.add_page_break()
+
+
+def build_list_of_figures(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None):
+    """Builds the formal LIST OF FIGURES preliminary page with dot leaders to right margin."""
+    rules = custom_rules or CustomFormattingRules()
+    p_h = doc.add_paragraph()
+    p_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_h.paragraph_format.space_before = Pt(20)
+    p_h.paragraph_format.space_after = Pt(24)
+    r_h = p_h.add_run("LIST OF FIGURES")
+    r_h.font.bold = True
+    r_h.font.size = Pt(14)
+    ensure_run_fonts(r_h, rules.font_name)
+
+    items = getattr(parsed, "prelim_figures_list", [])
+    if not items and getattr(parsed, "figures_count", 0) > 0:
+        for i in range(parsed.figures_count):
+            items.append(f"Figure 1.{i+1}: System Architecture and Flow Diagram\t{5 + i*4}")
+
+    for item in items:
+        p_row = doc.add_paragraph()
+        p_row.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p_row.paragraph_format.line_spacing = 1.15
+        p_row.paragraph_format.space_before = Pt(2)
+        p_row.paragraph_format.space_after = Pt(2)
+        p_row.paragraph_format.tab_stops.add_tab_stop(Cm(15.0), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+
+        page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', item)
+        pg_val = page_m.group(1) if page_m else "5"
+        clean_title = re.sub(r'[\.\s\t_]+\d+\s*$', '', item).strip()
+
+        r_t = p_row.add_run(clean_title)
+        r_t.font.size = Pt(11)
+        ensure_run_fonts(r_t, rules.font_name)
+
+        r_p = p_row.add_run(f"\t{pg_val}")
+        r_p.font.size = Pt(11)
+        ensure_run_fonts(r_p, rules.font_name)
+
+    doc.add_page_break()
+
+
+def build_list_of_abbreviations(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None):
+    """Builds the formal LIST OF ABBREVIATIONS AND ACRONYMS preliminary page."""
+    rules = custom_rules or CustomFormattingRules()
+    p_h = doc.add_paragraph()
+    p_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_h.paragraph_format.space_before = Pt(20)
+    p_h.paragraph_format.space_after = Pt(24)
+    r_h = p_h.add_run("LIST OF ABBREVIATIONS AND ACRONYMS")
+    r_h.font.bold = True
+    r_h.font.size = Pt(14)
+    ensure_run_fonts(r_h, rules.font_name)
+
+    abbrevs = getattr(parsed, "abbreviations", [])
+    if not abbrevs:
+        return
+
+    tbl = doc.add_table(rows=0, cols=2)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl.autofit = False
+
+    for acronym, definition in abbrevs:
+        row = tbl.add_row()
+        c0 = row.cells[0]
+        c1 = row.cells[1]
+        c0.width = Cm(3.2)
+        c1.width = Cm(11.8)
+        set_cell_margins(c0, top=40, bottom=40, left=40, right=40)
+        set_cell_margins(c1, top=40, bottom=40, left=40, right=40)
+
+        p0 = c0.paragraphs[0]
+        p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p0.paragraph_format.line_spacing = 1.15
+        p0.paragraph_format.space_before = Pt(1)
+        p0.paragraph_format.space_after = Pt(2)
+        r0 = p0.add_run(acronym)
+        r0.font.bold = True
+        r0.font.size = Pt(10.5)
+        ensure_run_fonts(r0, rules.font_name)
+
+        p1 = c1.paragraphs[0]
+        p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p1.paragraph_format.line_spacing = 1.15
+        p1.paragraph_format.space_before = Pt(1)
+        p1.paragraph_format.space_after = Pt(2)
+        r1 = p1.add_run(f"–  {definition}")
+        r1.font.size = Pt(10.5)
+        ensure_run_fonts(r1, rules.font_name)
+
+    doc.add_page_break()
+
+
+def sync_toc_page_numbers(docx_path: str, pdf_path: str) -> bool:
+    """
+    Extracts the exact body page numbers for all chapters, sections, tables, and figures
+    from the converted PDF and synchronizes them into the DOCX Table of Contents.
+    """
+    if not os.path.exists(docx_path) or not os.path.exists(pdf_path):
+        return False
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_path)
+        if len(reader.pages) < 3:
+            return False
+
+        # Locate PDF page where body section (Chapter 1) begins
+        body_start_pdf = 1
+        for p_idx, page in enumerate(reader.pages):
+            txt = page.extract_text() or ""
+            if p_idx > 3 and re.search(r'CHAPTER\s+1\b', txt, re.IGNORECASE) and 'TABLE OF CONTENTS' not in txt.upper():
+                body_start_pdf = p_idx + 1
+                break
+
+        # Map headings, tables, figures to exact body page numbers
+        heading_pages = {}
+        for p_idx, page in enumerate(reader.pages):
+            if p_idx + 1 < body_start_pdf:
+                continue
+            body_p = p_idx + 1 - body_start_pdf + 1
+            txt = page.extract_text() or ""
+            lines = [l.strip() for l in txt.split('\n') if l.strip()]
+            for line in lines:
+                ch_m = re.match(r'^(CHAPTER\s+\d+|REFERENCES|APPENDICES)', line, re.IGNORECASE)
+                sec_m = re.match(r'^(\d+\.\d+(?:\.\d+)?)\s+', line)
+                tbl_m = re.search(r'(Table\s+\d+\.\d+)', line, re.IGNORECASE)
+                fig_m = re.search(r'(Figure\s+\d+\.\d+)', line, re.IGNORECASE)
+                if ch_m:
+                    k = ch_m.group(1).upper()
+                    if k not in heading_pages:
+                        heading_pages[k] = body_p
+                if sec_m:
+                    k = sec_m.group(1)
+                    if k not in heading_pages:
+                        heading_pages[k] = body_p
+                if tbl_m:
+                    k = tbl_m.group(1).title()
+                    if k not in heading_pages:
+                        heading_pages[k] = body_p
+                if fig_m:
+                    k = fig_m.group(1).title()
+                    if k not in heading_pages:
+                        heading_pages[k] = body_p
+
+        # Open docx and update TOC / LOT / LOF paragraphs
+        d = docx.Document(docx_path)
+        modified = False
+        in_toc = False
+
+        for p in d.paragraphs:
+            t = p.text.strip()
+            if "TABLE OF CONTENTS" in t.upper() or "LIST OF TABLES" in t.upper() or "LIST OF FIGURES" in t.upper():
+                in_toc = True
+                continue
+            if re.match(r'^(?:CHAPTER|CHAPITRE)\s+1\b', t, re.IGNORECASE) and not re.search(r'[\.\s\t_]+\d+\s*$', t):
+                in_toc = False
+                break
+
+            if in_toc and "\t" in p.text:
+                parts = p.text.split("\t")
+                left_title = parts[0].strip()
+                target_page = None
+
+                # Check chapter match
+                ch_m = re.match(r'^(CHAPTER\s+\d+|REFERENCES|APPENDICES)', left_title, re.IGNORECASE)
+                if ch_m:
+                    k = ch_m.group(1).upper()
+                    if k in heading_pages:
+                        target_page = heading_pages[k]
+
+                # Check section match
+                if not target_page:
+                    sec_m = re.match(r'^(?:\s*)(\d+\.\d+(?:\.\d+)?)', left_title)
+                    if sec_m:
+                        k = sec_m.group(1)
+                        if k in heading_pages:
+                            target_page = heading_pages[k]
+
+                # Check table/figure match
+                if not target_page:
+                    tf_m = re.search(r'((?:Table|Figure)\s+\d+\.\d+)', left_title, re.IGNORECASE)
+                    if tf_m:
+                        k = tf_m.group(1).title()
+                        if k in heading_pages:
+                            target_page = heading_pages[k]
+
+                if target_page:
+                    for r in reversed(p.runs):
+                        if r.text.strip().isdigit():
+                            if r.text.strip() != str(target_page):
+                                r.text = str(target_page)
+                                modified = True
+                            break
+                        elif "\t" in r.text:
+                            if r.text.strip() != f"\t{target_page}".strip():
+                                r.text = f"\t{target_page}"
+                                modified = True
+                            break
+
+        if modified:
+            d.save(docx_path)
+            return True
+        return False
+    except Exception as e:
+        print(f"[AcadFormat] Error syncing TOC page numbers: {e}")
+        return False
 
 
 
@@ -1776,33 +2132,60 @@ def format_body_paragraph(
     """Applies UBa/custom formatting, font family, indentation, and spacing to paragraphs."""
     rules = custom_rules or CustomFormattingRules()
     p.text = ""
+    # Remove any leftover empty runs from clearing
+    for r in list(p.runs):
+        p._p.remove(r._r)
+
     p.paragraph_format.line_spacing = rules.line_spacing
 
     if is_chapter:
+        try:
+            p.style = 'Heading 1'
+        except Exception:
+            pass
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(24)
         p.paragraph_format.space_after = Pt(18)
         p.paragraph_format.keep_with_next = True
+        jc = p._p.get_or_add_pPr().get_or_add_jc()
+        jc.set(qn('w:val'), 'center')
         run = p.add_run(text.upper())
         run.font.name = rules.font_name
         run.font.size = Pt(rules.heading1_size_pt)
         run.font.bold = True
+        ensure_run_fonts(run, rules.font_name)
     elif is_sub1:
+        try:
+            p.style = 'Heading 2'
+        except Exception:
+            pass
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.space_before = Pt(14)
         p.paragraph_format.space_after = Pt(6)
+        p.paragraph_format.keep_with_next = True
+        jc = p._p.get_or_add_pPr().get_or_add_jc()
+        jc.set(qn('w:val'), 'left')
         run = p.add_run(text)
         run.font.name = rules.font_name
         run.font.size = Pt(rules.heading2_size_pt)
         run.font.bold = True
+        ensure_run_fonts(run, rules.font_name)
     elif is_sub2:
+        try:
+            p.style = 'Heading 3'
+        except Exception:
+            pass
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.space_before = Pt(10)
         p.paragraph_format.space_after = Pt(4)
+        p.paragraph_format.keep_with_next = True
+        jc = p._p.get_or_add_pPr().get_or_add_jc()
+        jc.set(qn('w:val'), 'left')
         run = p.add_run(text)
         run.font.name = rules.font_name
         run.font.size = Pt(rules.font_size_pt)
         run.font.bold = True
+        ensure_run_fonts(run, rules.font_name)
     elif is_ref:
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.line_spacing = min(1.15, rules.line_spacing)
@@ -1810,16 +2193,22 @@ def format_body_paragraph(
         p.paragraph_format.space_after = Pt(6)
         p.paragraph_format.left_indent = Inches(0.5)
         p.paragraph_format.first_line_indent = Inches(-0.5)
+        jc = p._p.get_or_add_pPr().get_or_add_jc()
+        jc.set(qn('w:val'), 'both')
         run = p.add_run(text)
         run.font.name = rules.font_name
         run.font.size = Pt(rules.font_size_pt)
+        ensure_run_fonts(run, rules.font_name)
     else:
-        p.alignment = rules.alignment
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(6)
+        jc = p._p.get_or_add_pPr().get_or_add_jc()
+        jc.set(qn('w:val'), 'both')
         run = p.add_run(text)
         run.font.name = rules.font_name
         run.font.size = Pt(rules.font_size_pt)
+        ensure_run_fonts(run, rules.font_name)
 
 
 def _transfer_and_format_drawing_paragraph(
@@ -1915,10 +2304,10 @@ def _transfer_and_format_table(
         tbl_num = tbl_counter[ch_key]
 
         headers = []
-        for tc in child.xpath('.//w:tr[1]//w:tc'):
-            p_elem = tc.xpath('.//w:p')
+        for tc in safe_xpath(child, './/w:tr[1]//w:tc'):
+            p_elem = safe_xpath(tc, './/w:p')
             if p_elem:
-                txt = "".join(p_elem[0].xpath('.//text()')).strip()
+                txt = "".join(safe_xpath(p_elem[0], './/text()')).strip()
                 if txt and len(txt) < 30:
                     headers.append(txt)
 
@@ -1967,13 +2356,8 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
     meta = req.metadata if req.metadata else parsed.metadata
     rules = parse_custom_formatting_rules(meta, req)
 
-    # Set default document style font
-    try:
-        norm_style = doc.styles['Normal']
-        norm_style.font.name = rules.font_name
-        norm_style.font.size = Pt(rules.font_size_pt)
-    except Exception:
-        pass
+    # Set default document styles and font configuration
+    configure_document_styles(doc, rules)
 
     # 1. Page Dimensions & Margins Setup (Standard 4.0cm binding or custom user margin)
     section = doc.sections[0]
@@ -2028,6 +2412,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
     f_run_p._r.append(fldChar3)
     f_run_p.font.name = rules.font_name
     f_run_p.font.size = Pt(11)
+    ensure_run_fonts(f_run_p, rules.font_name)
+
+    has_lot = bool(getattr(parsed, "prelim_tables_list", None) or getattr(parsed, "tables_count", 0) > 0 or getattr(parsed, "extracted_tables", None))
+    has_lof = bool(getattr(parsed, "prelim_figures_list", None) or getattr(parsed, "figures_count", 0) > 0)
+    has_abbrevs = bool(getattr(parsed, "abbreviations", None))
 
     # 5. Build Preliminaries according to Document Type
     if req.doc_type == "assignment":
@@ -2036,12 +2425,24 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         if is_group_ass and members_count > 5:
             build_group_members_page(doc, meta)
         build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
+        if has_lot:
+            build_list_of_tables(doc, parsed, custom_rules=rules)
+        if has_lof:
+            build_list_of_figures(doc, parsed, custom_rules=rules)
+        if has_abbrevs:
+            build_list_of_abbreviations(doc, parsed, custom_rules=rules)
         doc.add_page_break()
         build_assignment_acknowledgements(doc, meta)
 
     elif req.doc_type == "internship":
         build_internship_prelims(doc, meta, parsed)
         build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
+        if has_lot:
+            build_list_of_tables(doc, parsed, custom_rules=rules)
+        if has_lof:
+            build_list_of_figures(doc, parsed, custom_rules=rules)
+        if has_abbrevs:
+            build_list_of_abbreviations(doc, parsed, custom_rules=rules)
 
     else:
         build_statutory_prelims(doc, meta, req.doc_type)
@@ -2049,6 +2450,12 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
         if req.doc_type != "proposal":
             build_dissertation_dedication_and_ack(doc, meta)
         build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
+        if has_lot:
+            build_list_of_tables(doc, parsed, custom_rules=rules)
+        if has_lof:
+            build_list_of_figures(doc, parsed, custom_rules=rules)
+        if has_abbrevs:
+            build_list_of_abbreviations(doc, parsed, custom_rules=rules)
 
     # 6. Add Section Break for Main Body (Section 2 - centered decimal from 1)
     body_section = doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
@@ -2169,7 +2576,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                 elif child.tag.endswith('p'):
                     sp = docx.text.paragraph.Paragraph(child, source_docx)
                     raw_t = sp.text.strip()
-                    has_drawing = bool(child.xpath('.//w:drawing') or child.xpath('.//w:pict'))
+                    has_drawing = bool(safe_xpath(child, './/w:drawing') or safe_xpath(child, './/w:pict'))
 
                     if not raw_t and not has_drawing:
                         continue
@@ -2318,15 +2725,27 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     lvl = 0
                     is_h = False
                     style_name = sp.style.name if sp.style else "Normal"
-                    if "Heading 1" in style_name or (sp.runs and sp.runs[0].bold and sp.runs[0].font.size and sp.runs[0].font.size.pt >= 14):
-                        is_h = True
-                        lvl = 1
-                    elif "Heading 2" in style_name or re.match(r'^\d+\.\d+\s', raw_t):
-                        is_h = True
-                        lvl = 2
-                    elif "Heading 3" in style_name or re.match(r'^\d+\.\d+\.\d+\s', raw_t):
-                        is_h = True
-                        lvl = 3
+                    is_short = len(raw_t) < 180 and not (raw_t.count('.') > 2 and raw_t.endswith('.'))
+
+                    if is_short:
+                        if re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
+                            continue
+                        elif re.match(r'^\d+\.\d+(?:\.\d+)*\.?\s*', raw_t):
+                            num_dots = raw_t.split()[0].rstrip('.').count('.')
+                            is_h = True
+                            lvl = min(4, num_dots + 1)
+                        elif "Heading 1" in style_name and len(raw_t) < 60:
+                            is_h = True
+                            lvl = 1
+                        elif "Heading 2" in style_name:
+                            is_h = True
+                            lvl = 2
+                        elif "Heading 3" in style_name:
+                            is_h = True
+                            lvl = 3
+                        elif any(r.bold for r in sp.runs) and all(r.bold for r in sp.runs if r.text.strip()) and len(raw_t) < 90 and not raw_t.endswith('.'):
+                            is_h = True
+                            lvl = 2
 
                     if in_references:
                         format_p(p_elem, raw_t, is_ref=True)
@@ -2335,12 +2754,33 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                             continue
                         if raw_t.upper() in ["INTRODUCTION", "LITERATURE REVIEW", "MATERIALS AND METHODS", "RESULTS AND DISCUSSION", "RESULTS AND DISCUSSIONS", "CONCLUSION AND RECOMMENDATIONS"]:
                             continue
-                        if lvl == 1 or lvl == 2:
+                        if lvl <= 2:
                             format_p(p_elem, raw_t, is_sub1=True)
                         else:
                             format_p(p_elem, raw_t, is_sub2=True)
                     else:
-                        format_p(p_elem, raw_t)
+                        # Regular body paragraph - PRESERVE INLINE RUNS (bold, italics, emphasis)
+                        p_elem.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                        p_elem.paragraph_format.line_spacing = rules.line_spacing
+                        p_elem.paragraph_format.space_before = Pt(0)
+                        p_elem.paragraph_format.space_after = Pt(6)
+                        jc = p_elem._p.get_or_add_pPr().get_or_add_jc()
+                        jc.set(qn('w:val'), 'both')
+                        if sp.runs:
+                            for r in sp.runs:
+                                if not r.text:
+                                    continue
+                                nr = p_elem.add_run(r.text)
+                                nr.bold = r.bold
+                                nr.italic = r.italic
+                                nr.font.name = rules.font_name
+                                nr.font.size = Pt(rules.font_size_pt)
+                                ensure_run_fonts(nr, rules.font_name)
+                        else:
+                            nr = p_elem.add_run(raw_t)
+                            nr.font.name = rules.font_name
+                            nr.font.size = Pt(rules.font_size_pt)
+                            ensure_run_fonts(nr, rules.font_name)
                     
                     prev_raw_t = raw_t
         else:
