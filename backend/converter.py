@@ -1,12 +1,14 @@
 """
 Document Converter: Converts DOCX to PDF using LibreOffice headless
 and generates high-resolution page previews with pdftoppm.
+Features a high-fidelity pure-Python fallback previewer that preserves
+tables, figures, formulas, and Senate formatting rules.
 """
 import os
 import shutil
 import subprocess
 import glob
-from typing import List, Dict, Any
+import io
 from typing import List, Dict, Any, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 import docx
@@ -52,12 +54,11 @@ def convert_docx_to_pdf(docx_path: str, output_dir: str) -> str:
             abs_out_dir,
             os.path.abspath(docx_path)
         ]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
         if result.returncode != 0:
             raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
         
         if not os.path.exists(pdf_path):
-            # Look for any pdf generated
             pdfs = glob.glob(os.path.join(abs_out_dir, "*.pdf"))
             if pdfs:
                 pdf_path = pdfs[0]
@@ -77,7 +78,6 @@ def generate_page_previews(pdf_path: str, preview_dir: str, dpi: int = 120, max_
     if not ppm_bin:
         raise RuntimeError("pdftoppm binary not found in system PATH. Install poppler-utils to enable page previews.")
 
-    # Purge existing preview directory completely to avoid stale pages joining
     if os.path.exists(preview_dir):
         shutil.rmtree(preview_dir, ignore_errors=True)
     os.makedirs(preview_dir, exist_ok=True)
@@ -90,11 +90,10 @@ def generate_page_previews(pdf_path: str, preview_dir: str, dpi: int = 120, max_
         pdf_path,
         prefix
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
     if result.returncode != 0:
         raise RuntimeError(f"pdftoppm failed: {result.stderr}")
 
-    # Collect generated page images sorted by page number
     page_files = sorted(glob.glob(os.path.join(preview_dir, "page-*.png")))
     return page_files[:max_pages]
 
@@ -104,7 +103,8 @@ def _get_font(size: int = 14, bold: bool = False) -> ImageFont.ImageFont:
     candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
     ]
     for p in candidates:
         if os.path.isfile(p):
@@ -116,9 +116,10 @@ def _get_font(size: int = 14, bold: bool = False) -> ImageFont.ImageFont:
 
 
 def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> List[str]:
-    """Wraps text into lines that fit within max_width pixels."""
+    """Wraps text into lines that fit within max_width pixels, cleanly expanding tabs and spaces."""
+    cleaned = text.replace("\t", "    ")
     lines = []
-    for para in text.split("\n"):
+    for para in cleaned.split("\n"):
         if not para.strip():
             lines.append("")
             continue
@@ -150,8 +151,12 @@ def generate_pure_python_previews(
 ) -> List[str]:
     """
     High-fidelity pure-Python preview generator using Pillow.
-    Renders official Senate A4 pages (Cover, Title, Preliminaries, Chapters)
-    directly without requiring LibreOffice or pdftoppm. Works reliably in serverless environments.
+    Renders official Senate A4 pages with full support for:
+    - Official UBa central crest logo
+    - Table grids with headers and cell borders
+    - Embedded diagrams and drawings extracted from docx parts
+    - Boxed statutory titles
+    - Dynamic Roman preliminary and Arabic body page numbering
     """
     if os.path.exists(preview_dir):
         shutil.rmtree(preview_dir, ignore_errors=True)
@@ -163,53 +168,107 @@ def generate_pure_python_previews(
         print(f"[AcadFormat Converter] Error reading docx for preview: {e}")
         return []
 
-    # Partition paragraphs into logical pages by page break runs and pageBreakBefore
-    pages_paragraphs: List[List[Any]] = []
-    curr_page: List[Any] = []
-    for p in doc.paragraphs:
-        p_has_break_before = bool(p.paragraph_format.page_break_before or p._p.xpath('.//w:pPr/w:pageBreakBefore'))
-        if p_has_break_before and curr_page:
-            pages_paragraphs.append(curr_page)
-            curr_page = []
+    # Collect body items in document order: paragraphs ('p') and tables ('tbl')
+    body_items: List[Tuple[str, Any]] = []
+    for child in doc.element.body:
+        tag = child.tag.split("}")[-1]
+        if tag == "p":
+            p = docx.text.paragraph.Paragraph(child, doc)
+            body_items.append(("p", p))
+        elif tag == "tbl":
+            t = docx.table.Table(child, doc)
+            body_items.append(("tbl", t))
 
-        curr_page.append(p)
-        has_break = any("w:br" in r._r.xml and "page" in r._r.xml for r in p.runs)
-        if has_break:
-            pages_paragraphs.append(curr_page)
-            curr_page = []
+    # Partition into logical pages based on page breaks
+    pages_items: List[List[Tuple[str, Any]]] = []
+    curr_page: List[Tuple[str, Any]] = []
+
+    for item_type, item in body_items:
+        if item_type == "p":
+            p_has_break_before = bool(item.paragraph_format.page_break_before or item._p.xpath('.//w:pPr/w:pageBreakBefore'))
+            if p_has_break_before and curr_page:
+                pages_items.append(curr_page)
+                curr_page = []
+
+            curr_page.append((item_type, item))
+            has_break = any("w:br" in r._r.xml and "page" in r._r.xml for r in item.runs) or bool(item._p.xpath('.//w:pPr/w:sectPr'))
+            if has_break:
+                pages_items.append(curr_page)
+                curr_page = []
+        else:
+            curr_page.append((item_type, item))
+
     if curr_page:
-        pages_paragraphs.append(curr_page)
+        pages_items.append(curr_page)
 
     if max_pages and max_pages > 0:
-        pages_paragraphs = pages_paragraphs[:max_pages]
+        pages_items = pages_items[:max_pages]
 
-    if not pages_paragraphs:
+    if not pages_items:
         return []
 
     W, H = 992, 1403  # A4 at 120 DPI
-    left_margin = 150
+    left_margin = 140
     right_margin = W - 120
     max_text_w = right_margin - left_margin
 
-    # Load crest logo if present
+    # Official Logo Loading: Prioritize UBa central crest
     logo_img = None
-    for lpath in [os.path.join(ASSETS_DIR, "coltech_logo.png"), os.path.join(ASSETS_DIR, "uba_logo.png")]:
-        if os.path.exists(lpath):
-            try:
-                logo_img = Image.open(lpath).convert("RGBA")
-                logo_img.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                break
-            except Exception:
-                pass
+    uba_logo_path = os.path.join(ASSETS_DIR, "uba_logo.png")
+    coltech_logo_path = os.path.join(ASSETS_DIR, "coltech_logo.png")
+    if os.path.exists(uba_logo_path):
+        try:
+            logo_img = Image.open(uba_logo_path).convert("RGBA")
+            logo_img.thumbnail((110, 110), Image.Resampling.LANCZOS)
+        except Exception:
+            pass
+    elif os.path.exists(coltech_logo_path):
+        try:
+            logo_img = Image.open(coltech_logo_path).convert("RGBA")
+            logo_img.thumbnail((110, 110), Image.Resampling.LANCZOS)
+        except Exception:
+            pass
+
+    coltech_img = None
+    if os.path.exists(coltech_logo_path):
+        try:
+            coltech_img = Image.open(coltech_logo_path).convert("RGBA")
+            coltech_img.thumbnail((85, 85), Image.Resampling.LANCZOS)
+        except Exception:
+            pass
 
     f_normal = _get_font(13, False)
     f_bold = _get_font(13, True)
-    f_title = _get_font(16, True)
+    f_title = _get_font(15, True)
     f_h1 = _get_font(15, True)
     f_h2 = _get_font(13, True)
+    f_tbl_hdr = _get_font(12, True)
+    f_tbl_cell = _get_font(11, False)
     f_footer = _get_font(12, False)
 
-    body_start_page = 8
+    # Detect body start page dynamically (first page with actual CHAPTER 1 or INTRODUCTION, ignoring TOC)
+    import re
+    body_start_page = 999
+    for p_idx, page_content in enumerate(pages_items):
+        is_prelim = any(
+            itype == "p" and any(k in elem.text.strip().upper() for k in [
+                "TABLE OF CONTENTS", "LIST OF TABLES", "LIST OF FIGURES", "PRELIMINARY",
+                "DECLARATION", "CERTIFICATION", "ABSTRACT", "RÉSUMÉ", "DEDICATION", "ACKNOWLEDGEMENT"
+            ])
+            for itype, elem in page_content
+        )
+        if is_prelim:
+            continue
+
+        for itype, elem in page_content:
+            if itype == "p":
+                t = elem.text.strip().upper()
+                is_toc_entry = bool(re.search(r'(?:\.{2,}|\t|\s{3,})\d+\s*$', t))
+                if not is_toc_entry and (t.startswith("CHAPTER 1") or t == "INTRODUCTION" or t.startswith("1.1 ")):
+                    body_start_page = p_idx + 1
+                    break
+        if body_start_page != 999:
+            break
 
     rendered_pages = []
     page_counter = 1
@@ -241,7 +300,7 @@ def generate_pure_python_previews(
         img_to_save.save(out_file, "PNG", optimize=True)
         rendered_pages.append(out_file)
 
-    for idx, p_list in enumerate(pages_paragraphs):
+    for idx, page_content in enumerate(pages_items):
         is_cover_or_title = (idx < 2)
 
         if idx > 0 and curr_y > 100:
@@ -251,39 +310,185 @@ def generate_pure_python_previews(
                 break
             current_img, draw, curr_y = start_new_page()
 
-        if is_cover_or_title and logo_img:
-            current_img.paste(logo_img, ((W - logo_img.width) // 2, 60), mask=logo_img)
-            curr_y = 175
+        for itype, elem in page_content:
+            if itype == "tbl":
+                t = elem
+                num_rows = len(t.rows)
+                num_cols = len(t.columns) if num_rows > 0 else 0
 
-        for p in p_list:
+                # 1. 1x1 Boxed Title Table
+                if num_rows == 1 and num_cols == 1:
+                    t_text = t.rows[0].cells[0].text.strip().upper()
+                    if t_text:
+                        t_lines = _wrap_text(t_text, f_title, max_text_w - 40, draw)
+                        b_h = max(70, len(t_lines) * 24 + 26)
+                        if curr_y + b_h > 1280 and curr_y > 150:
+                            finish_page(current_img, page_counter)
+                            page_counter += 1
+                            current_img, draw, curr_y = start_new_page()
+                        draw.rectangle([(left_margin, curr_y), (right_margin, curr_y + b_h)], outline="black", width=2)
+                        ty = curr_y + 14
+                        for tl in t_lines:
+                            draw.text((W // 2, ty), tl, font=f_title, fill="black", anchor="mm")
+                            ty += 24
+                        curr_y += b_h + 20
+                    continue
+
+                # 2. 1x3 Header Banner Table
+                if num_rows == 1 and num_cols == 3:
+                    c0_txt = t.rows[0].cells[0].text.strip()
+                    c2_txt = t.rows[0].cells[2].text.strip()
+                    banner_h = 100
+                    if curr_y + banner_h > 1280 and curr_y > 150:
+                        finish_page(current_img, page_counter)
+                        page_counter += 1
+                        current_img, draw, curr_y = start_new_page()
+
+                    # Left School
+                    w_left = _wrap_text(c0_txt, f_bold, 240, draw)
+                    ly = curr_y + 10
+                    for wl in w_left:
+                        draw.text((left_margin + 120, ly), wl, font=f_bold, fill="black", anchor="ma")
+                        ly += 18
+
+                    # Center Logo (UBa Official Crest)
+                    if logo_img:
+                        current_img.paste(logo_img, ((W - logo_img.width) // 2, curr_y), mask=logo_img)
+
+                    # Right Dept
+                    w_right = _wrap_text(c2_txt, f_bold, 240, draw)
+                    ry = curr_y + 10
+                    for wr in w_right:
+                        draw.text((right_margin - 120, ry), wr, font=f_bold, fill="black", anchor="ma")
+                        ry += 18
+
+                    curr_y += banner_h + 20
+                    continue
+
+                # 3. 1x2 Signature Table
+                if num_rows == 1 and num_cols == 2:
+                    s0 = t.rows[0].cells[0].text.strip()
+                    s1 = t.rows[0].cells[1].text.strip()
+                    draw.text((left_margin, curr_y), s0, font=f_normal, fill="black")
+                    draw.text((right_margin, curr_y), s1, font=f_normal, fill="black", anchor="ra")
+                    curr_y += 30
+                    continue
+
+                # 4. Multi-row Data Tables (Render grid and cell contents)
+                if num_rows > 1 and num_cols > 0:
+                    col_w = max_text_w // num_cols
+                    for r_idx, row in enumerate(t.rows):
+                        # Calculate needed row height
+                        row_cells_text = [c.text.strip().replace("\t", " ") for c in row.cells]
+                        wrapped_cells = [_wrap_text(ctxt, f_tbl_hdr if r_idx == 0 else f_tbl_cell, col_w - 12, draw) for ctxt in row_cells_text]
+                        max_cell_lines = max([len(lines) for lines in wrapped_cells] or [1])
+                        row_h = max(24, max_cell_lines * 16 + 10)
+
+                        if curr_y + row_h > 1280 and curr_y > 150:
+                            finish_page(current_img, page_counter)
+                            page_counter += 1
+                            current_img, draw, curr_y = start_new_page()
+
+                        # Header fill
+                        if r_idx == 0:
+                            draw.rectangle([(left_margin, curr_y), (right_margin, curr_y + row_h)], fill="#F1F5F9", outline="#64748B", width=1)
+                        else:
+                            draw.rectangle([(left_margin, curr_y), (right_margin, curr_y + row_h)], outline="#CBD5E1", width=1)
+
+                        # Cell borders and text
+                        for c_idx in range(num_cols):
+                            cx = left_margin + c_idx * col_w
+                            if c_idx > 0:
+                                draw.line([(cx, curr_y), (cx, curr_y + row_h)], fill="#94A3B8" if r_idx == 0 else "#CBD5E1", width=1)
+                            
+                            c_font = f_tbl_hdr if r_idx == 0 else f_tbl_cell
+                            c_color = "black" if r_idx == 0 else "#1E293B"
+                            cy = curr_y + 5
+                            if c_idx < len(wrapped_cells):
+                                for cline in wrapped_cells[c_idx]:
+                                    draw.text((cx + 6, cy), cline, font=c_font, fill=c_color)
+                                    cy += 16
+                        curr_y += row_h
+                    curr_y += 15
+                    continue
+
+            # Paragraph Processing
+            p = elem
             txt = p.text.strip()
+
+            # Check for embedded drawings or images
+            has_drawing = bool(p._p.xpath('.//w:drawing') or p._p.xpath('.//w:pict'))
+            if has_drawing:
+                fig_drawn = False
+                rIds = p._p.xpath('.//a:blip/@r:embed')
+                for rId in rIds:
+                    if rId in doc.part.related_parts:
+                        try:
+                            part = doc.part.related_parts[rId]
+                            fig_im = Image.open(io.BytesIO(part.blob))
+                            # Scale maintaining aspect ratio (max width max_text_w, max height 380)
+                            scale = min(max_text_w / fig_im.width, 380 / fig_im.height, 1.0)
+                            nw = int(fig_im.width * scale)
+                            nh = int(fig_im.height * scale)
+                            fig_resized = fig_im.resize((nw, nh), Image.Resampling.LANCZOS)
+                            
+                            if curr_y + nh + 20 > 1280 and curr_y > 150:
+                                finish_page(current_img, page_counter)
+                                page_counter += 1
+                                current_img, draw, curr_y = start_new_page()
+
+                            current_img.paste(fig_resized, ((W - nw) // 2, curr_y))
+                            curr_y += nh + 12
+                            fig_drawn = True
+                            break
+                        except Exception:
+                            pass
+                if not fig_drawn:
+                    # Draw a clean diagram placeholder box
+                    box_h = 160
+                    if curr_y + box_h > 1280 and curr_y > 150:
+                        finish_page(current_img, page_counter)
+                        page_counter += 1
+                        current_img, draw, curr_y = start_new_page()
+                    draw.rectangle([(left_margin + 50, curr_y), (right_margin - 50, curr_y + box_h)], fill="#F8FAFC", outline="#94A3B8", width=1)
+                    draw.text((W // 2, curr_y + box_h // 2), "[System Figure / Diagram]", font=f_bold, fill="#475569", anchor="mm")
+                    curr_y += box_h + 12
+
             if not txt:
-                curr_y += 10
+                if not has_drawing:
+                    curr_y += 8
                 continue
 
             p_style = getattr(p.style, "name", "Normal")
             is_heading = "Heading" in p_style or (txt.isupper() and len(txt) < 80)
             p_font = f_h1 if ("Heading 1" in p_style or (txt.isupper() and len(txt) < 50)) else (f_h2 if "Heading" in p_style else f_normal)
 
-            # Boxed title check on cover/title page
-            is_boxed_title = is_cover_or_title and (
-                ("ORCHESTRATOR" in txt.upper() or "DESIGN" in txt.upper() or "STUDY" in txt.upper() or "SYSTEM" in txt.upper() or "INVESTIGATION" in txt.upper() or len(txt) > 25)
-                and not any(k in txt.upper() for k in ["THE UNIVERSITY", "L'UNIVERSITE", "COLLEGE", "FACULTY", "DEPARTMENT", "DISSERTATION", "SUBMITTED", "PRESENTED", "SUPERVISED", "SUPERVISOR", "REGISTRATION", "DATE", "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"])
+            # Prevent preliminary headings from ever being boxed as titles
+            is_prelim_header = any(k in txt.upper() for k in [
+                "DECLARATION", "ORIGINALITY", "CERTIFICATION", "DEDICATION", "ACKNOWLEDGEMENT",
+                "ABSTRACT", "RESUME", "RÉSUMÉ", "TABLE OF CONTENTS", "LIST OF", "PRELIMINARY",
+                "ANNEX", "APPENDIX", "THE UNIVERSITY", "COLLEGE", "FACULTY", "DEPARTMENT"
+            ])
+
+            # Boxed title check on cover/title page (strictly for true project titles)
+            is_boxed_title = is_cover_or_title and not is_prelim_header and (
+                ("ORCHESTRATOR" in txt.upper() or "DESIGN" in txt.upper() or "SYSTEM" in txt.upper() or "INVESTIGATION" in txt.upper() or len(txt) > 28)
+                and not any(k in txt.upper() for k in ["SUBMITTED", "PRESENTED", "SUPERVISED", "SUPERVISOR", "REGISTRATION", "DATE", "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"])
             )
 
             if is_boxed_title:
                 t_lines = _wrap_text(txt.upper(), f_title, max_text_w - 40, draw)
-                b_h = max(80, len(t_lines) * 26 + 30)
+                b_h = max(70, len(t_lines) * 24 + 26)
                 if curr_y + b_h > 1280 and curr_y > 150:
                     finish_page(current_img, page_counter)
                     page_counter += 1
                     current_img, draw, curr_y = start_new_page()
                 draw.rectangle([(left_margin, curr_y), (right_margin, curr_y + b_h)], outline="black", width=2)
-                ty = curr_y + 16
+                ty = curr_y + 14
                 for tl in t_lines:
                     draw.text((W // 2, ty), tl, font=f_title, fill="black", anchor="mm")
-                    ty += 26
-                curr_y += b_h + 30
+                    ty += 24
+                curr_y += b_h + 20
                 continue
 
             wrapped = _wrap_text(txt, p_font, max_text_w, draw)
@@ -337,7 +542,7 @@ def images_to_pdf(image_paths: List[str], output_pdf_path: str) -> bool:
                     pass
         if not valid_imgs:
             return False
-        valid_imgs[0].save(output_pdf_path, "PDF", resolution=100.0, save_all=True, append_images=valid_imgs[1:])
+        valid_imgs[0].save(output_pdf_path, "PDF", resolution=120.0, save_all=True, append_images=valid_imgs[1:])
         return os.path.exists(output_pdf_path)
     except Exception as e:
         print(f"[AcadFormat Converter] Error assembling images to PDF: {e}")
@@ -354,37 +559,43 @@ def generate_document_previews(
 ) -> Tuple[Optional[str], List[str], List[str]]:
     """
     Primary preview orchestrator:
-    1. Attempts headless LibreOffice + pdftoppm if available.
-    2. Seamlessly falls back to pure-Python preview generator when LibreOffice is not present.
+    1. Converts DOCX to true vector PDF via LibreOffice headless.
+    2. Generates crisp page preview PNGs using pdftoppm.
+    3. Seamlessly falls back to pure-Python preview generator without overwriting the native PDF.
     Always returns (pdf_path, preview_page_paths, preview_data_urls).
     """
     out_pdf_path = None
     preview_pages: List[str] = []
     preview_data_urls: List[str] = []
 
-    if is_libreoffice_available() and is_pdftoppm_available():
+    # Step 1: Generate true vector PDF via LibreOffice
+    if is_libreoffice_available():
         try:
             out_pdf_path = convert_docx_to_pdf(docx_path, output_dir)
-            if out_pdf_path and os.path.exists(out_pdf_path):
-                preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=dpi, max_pages=max_pages)
-                if preview_pages:
-                    preview_data_urls = [image_file_to_base64_data_url(p) for p in preview_pages]
-                    return out_pdf_path, preview_pages, preview_data_urls
         except Exception as lo_err:
             print(f"[AcadFormat Converter] LibreOffice conversion skipped: {lo_err}")
 
-    # Fallback to pure-Python generator
+    # Step 2: Generate previews from the true PDF if pdftoppm is available
+    if out_pdf_path and os.path.exists(out_pdf_path) and is_pdftoppm_available():
+        try:
+            preview_pages = generate_page_previews(out_pdf_path, preview_dir, dpi=dpi, max_pages=max_pages)
+            if preview_pages:
+                preview_data_urls = [image_file_to_base64_data_url(p) for p in preview_pages]
+                return out_pdf_path, preview_pages, preview_data_urls
+        except Exception as ppm_err:
+            print(f"[AcadFormat Converter] pdftoppm preview generation failed: {ppm_err}")
+
+    # Step 3: Pure-Python preview generator fallback (renders tables, figures, boxed titles)
     try:
         preview_pages = generate_pure_python_previews(docx_path, preview_dir, dpi=dpi, max_pages=max_pages, metadata=metadata)
         if preview_pages:
             preview_data_urls = [image_file_to_base64_data_url(p) for p in preview_pages]
-            # Assemble multi-page PDF from previews so PDF export is always guaranteed
-            candidate_pdf = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(docx_path))[0]}.pdf")
-            if images_to_pdf(preview_pages, candidate_pdf):
-                out_pdf_path = candidate_pdf
+            # ONLY assemble an image PDF if LibreOffice could not produce a vector PDF
+            if not out_pdf_path or not os.path.exists(out_pdf_path):
+                candidate_pdf = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(docx_path))[0]}.pdf")
+                if images_to_pdf(preview_pages, candidate_pdf):
+                    out_pdf_path = candidate_pdf
     except Exception as py_err:
         print(f"[AcadFormat Converter] Pure-Python preview generator error: {py_err}")
 
     return out_pdf_path, preview_pages, preview_data_urls
-
-

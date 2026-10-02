@@ -1169,8 +1169,8 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
         
         sigs = [
             ("Supervisor", f"{sup_main} ({sup_rank})"),
-            ("The Head of Department", meta.hod_name),
-            ("The Director / Dean", f"{meta.director_name} ({meta.director_title})")
+            ("The Head of Department", meta.hod_name if meta.hod_name and meta.hod_name.strip() not in ["0", "None"] else ""),
+            ("The Director / Dean", f"{meta.director_name} ({meta.director_title})".strip(" ()") if meta.director_name and meta.director_name.strip() not in ["0", "None"] else "")
         ]
         for role, name in sigs:
             p_s = doc.add_paragraph()
@@ -1181,10 +1181,11 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
             r_sr.font.size = Pt(11)
             r_sr.font.bold = True
             
-            r_sn = p_s.add_run(f"{name}\n")
-            r_sn.font.name = "Times New Roman"
-            r_sn.font.size = Pt(11)
-            r_sn.font.italic = True
+            if name and name.strip() and name.strip() not in ["0", "()", "(None)"]:
+                r_sn = p_s.add_run(f"{name}\n")
+                r_sn.font.name = "Times New Roman"
+                r_sn.font.size = Pt(11)
+                r_sn.font.italic = True
 
         doc.add_page_break()
 
@@ -1261,8 +1262,19 @@ def build_abstract_and_resume(doc: docx.Document, meta: DocumentMetadata, parsed
     p_ab.paragraph_format.line_spacing = 1.5
     p_ab.paragraph_format.space_after = Pt(20)
 
+    t_clean = (meta.title or "").strip()
+    if t_clean.lower().startswith("implementation of "):
+        lead_en = "This study investigates and presents the "
+        lead_fr = "Cette étude examine et présente la "
+    elif t_clean.lower().startswith("design and implementation of "):
+        lead_en = "This study investigates and presents the "
+        lead_fr = "Cette étude examine et présente la "
+    else:
+        lead_en = "This study investigates and presents the implementation of "
+        lead_fr = "Cette étude examine et présente la conception et le développement de "
+
     sample_abstract = (
-        f"This study investigates and presents the implementation of {meta.title} developed in the Department of "
+        f"{lead_en}{meta.title} developed in the Department of "
         f"{meta.department} in {meta.faculty} at The University of Bamenda. The primary aim is to resolve "
         f"operational challenges through modern technological frameworks and rigorous system architecture. The results "
         f"demonstrate high reliability, performance efficiency, and adherence to academic and industrial standards."
@@ -1300,7 +1312,7 @@ def build_abstract_and_resume(doc: docx.Document, meta: DocumentMetadata, parsed
     p_rab.paragraph_format.space_after = Pt(20)
 
     french_abstract = (
-        f"Cette étude examine et présente la conception et le développement de {meta.title} au sein du Département de "
+        f"{lead_fr}{meta.title} au sein du Département de "
         f"{meta.department} à {meta.faculty} de l'Université de Bamenda. L'objectif principal est de concevoir "
         f"une architecture robuste et hautement performante répondant aux exigences académiques et professionnelles."
     )
@@ -2215,14 +2227,15 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         prev_raw_t = raw_t
                         continue
 
-                    # Appendices header check
+                    # Appendices header check (only valid after main chapters have started)
                     if any(raw_t.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
-                        p_elem = doc.add_paragraph()
-                        p_elem.paragraph_format.page_break_before = True
-                        format_p(p_elem, raw_t.upper(), is_chapter=True)
-                        in_references = False
-                        current_chapter = 100
-                        prev_raw_t = raw_t
+                        if current_chapter >= 1:
+                            p_elem = doc.add_paragraph()
+                            p_elem.paragraph_format.page_break_before = True
+                            format_p(p_elem, raw_t.upper(), is_chapter=True)
+                            in_references = False
+                            current_chapter = 100
+                            prev_raw_t = raw_t
                         continue
 
                     # Explicit chapter heading
@@ -2353,11 +2366,12 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     current_chapter = 99
                     continue
                 if any(raw_t.upper().startswith(ap) for ap in ["APPENDIX", "APPENDICES", "ANNEX"]):
-                    p_elem = doc.add_paragraph()
-                    p_elem.paragraph_format.page_break_before = True
-                    format_p(p_elem, raw_t.upper(), is_chapter=True)
-                    in_references = False
-                    current_chapter = 100
+                    if current_chapter >= 1:
+                        p_elem = doc.add_paragraph()
+                        p_elem.paragraph_format.page_break_before = True
+                        format_p(p_elem, raw_t.upper(), is_chapter=True)
+                        in_references = False
+                        current_chapter = 100
                     continue
 
                 ch_match = re.match(

@@ -36,7 +36,10 @@ from backend.chatbot import generate_chat_response
 from backend.parser import parse_document
 from backend.auditor import audit_document
 from backend.restructurer import restructure_document
-from backend.converter import convert_docx_to_pdf, generate_page_previews, generate_document_previews, images_to_pdf
+from backend.converter import (
+    convert_docx_to_pdf, generate_page_previews, generate_document_previews,
+    images_to_pdf, is_libreoffice_available
+)
 from backend.database import (
     save_document_record, save_reformat_record, is_supabase_configured, list_recent_documents,
     create_user, authenticate_user, create_session, get_user_by_session, check_download_eligibility,
@@ -728,6 +731,14 @@ async def download_file(
                 except Exception as e:
                     print(f"[AcadFormat] Error generating PDF during download: {e}")
 
+            if (not path or not os.path.exists(path)) and docx_path and os.path.exists(docx_path) and is_libreoffice_available():
+                session_dir = session.get("session_dir") or os.path.dirname(docx_path)
+                try:
+                    path = convert_docx_to_pdf(docx_path, session_dir)
+                    session["formatted_pdf"] = path
+                except Exception as lo_err:
+                    print(f"[AcadFormat] Direct LibreOffice download conversion error: {lo_err}")
+
             if (not path or not os.path.exists(path)) and session.get("preview_pages"):
                 session_dir = session.get("session_dir") or os.path.dirname(session.get("formatted_docx", ""))
                 cand_pdf = os.path.join(session_dir, "formatted.pdf")
@@ -928,12 +939,21 @@ async def download_direct_endpoint(
         temp_preview_dir = os.path.join(temp_dir, "previews")
         pdf_path = None
         preview_pages = []
-        try:
-            pdf_path, preview_pages, _ = generate_document_previews(
-                temp_out, temp_dir, temp_preview_dir, dpi=120, max_pages=100, metadata=meta
-            )
-        except Exception as e:
-            print(f"[AcadFormat] Error generating PDF in direct download: {e}")
+
+        # Prioritize direct vector PDF conversion via LibreOffice
+        if is_libreoffice_available():
+            try:
+                pdf_path = convert_docx_to_pdf(temp_out, temp_dir)
+            except Exception as lo_err:
+                print(f"[AcadFormat] Error converting to PDF in direct download: {lo_err}")
+
+        if not pdf_path or not os.path.exists(pdf_path):
+            try:
+                pdf_path, preview_pages, _ = generate_document_previews(
+                    temp_out, temp_dir, temp_preview_dir, dpi=120, max_pages=100, metadata=meta
+                )
+            except Exception as e:
+                print(f"[AcadFormat] Error generating PDF in direct download: {e}")
 
         if (not pdf_path or not os.path.exists(pdf_path)) and preview_pages:
             cand_pdf = os.path.join(temp_dir, "formatted.pdf")
