@@ -194,7 +194,7 @@ class TestUBaPipeline(unittest.TestCase):
         print(f"[Test] Database persistence layer verified successfully! ({len(recent)} recent records)")
 
     def test_internship_and_assignment_have_only_one_cover_page(self):
-        """Verifies that Internship Reports and Assignments have ONLY 1 cover page (no title page replica)."""
+        """Verifies that Internship Reports, Assignments, and Dissertations have ONLY 1 cover page (no duplicate on page 2)."""
         import docx
         parsed = parse_document(TEST_DOCX)
         
@@ -216,14 +216,14 @@ class TestUBaPipeline(unittest.TestCase):
         uba_count_int = sum(1 for p in doc_int.paragraphs if p.text.strip() == "THE UNIVERSITY OF BAMENDA")
         self.assertEqual(uba_count_int, 1, "Internship Report must have exactly 1 cover page, no duplicate title page!")
 
-        # 3. Dissertation: SHOULD have 2 (Cover + Title Page)
+        # 3. Dissertation: MUST ALSO have ONLY 1 cover page (no duplicate on page 2)
         req_dis = ReformatRequest(doc_type="dissertation_bsc", school_type="coltech", header_mode="center_crest", metadata=parsed.metadata)
-        out_dis = os.path.join(OUT_DIR, "test_dual_cover_dissertation.docx")
+        out_dis = os.path.join(OUT_DIR, "test_single_cover_dissertation.docx")
         restructure_document(parsed, req_dis, out_dis)
         doc_dis = docx.Document(out_dis)
         uba_count_dis = sum(1 for p in doc_dis.paragraphs if p.text.strip() == "THE UNIVERSITY OF BAMENDA")
-        self.assertEqual(uba_count_dis, 2, "Dissertation must have Cover Page AND inside Title Page replica!")
-        print("[Test] Verified: Internship & Assignment have only 1 cover page; Dissertation has Cover + Title page.")
+        self.assertEqual(uba_count_dis, 1, "Dissertation must have exactly 1 cover page, no duplicate title page on page 2!")
+        print("[Test] Verified: Internship, Assignment, and Dissertation all have exactly 1 cover page.")
 
     def test_group_assignment_small_roster_fits_on_cover(self):
         """Verifies that a group assignment with <= 5 members renders the member table directly on the cover page."""
@@ -626,6 +626,91 @@ class TestUBaPipeline(unittest.TestCase):
         self.assertEqual(res_direct.status_code, 200)
         self.assertEqual(res_direct.headers["content-type"], "application/pdf")
         self.assertGreater(len(res_direct.content), 1000)
+
+    def test_academic_text_sanitization_and_apa(self):
+        """Verifies clean_academic_text and clean_apa_reference fix encoding corruptions, casing, placeholders, and APA styling."""
+        from backend.parser import clean_academic_text, clean_apa_reference
+
+        # 1. Encoding corruptions
+        corrupt = "The systemâ€™s performance was â€œexcellentâ€\xa0and VoIPâ€“ready."
+        cleaned = clean_academic_text(corrupt)
+        self.assertNotIn("â€™", cleaned)
+        self.assertNotIn("â€œ", cleaned)
+        self.assertNotIn("â€“", cleaned)
+        self.assertIn("system's", cleaned)
+        self.assertIn('"excellent"', cleaned)
+
+        # 2. Inconsistent technical casing
+        tech_text = "Testing issabelpbx with VOIP and sip protocol over wifi, zoIPER and pjsip."
+        tech_cleaned = clean_academic_text(tech_text)
+        self.assertIn("IssabelPBX", tech_cleaned)
+        self.assertIn("VoIP", tech_cleaned)
+        self.assertIn("SIP", tech_cleaned)
+        self.assertIn("Wi-Fi", tech_cleaned)
+        self.assertIn("Zoiper", tech_cleaned)
+        self.assertIn("PJSIP", tech_cleaned)
+
+        # 3. Editorial placeholders
+        placeholder_text = "Results are shown below. [insert screenshots here] Also see [insert detailed network topology diagram here]."
+        ph_cleaned = clean_academic_text(placeholder_text)
+        self.assertNotIn("[insert screenshots here]", ph_cleaned)
+        self.assertNotIn("[insert detailed network topology diagram here]", ph_cleaned)
+
+        # 4. APA reference cleaning
+        raw_ref = "Smith, J.(2020). Modern VoIP networks. doi:10.1000/182"
+        apa_cleaned = clean_apa_reference(raw_ref)
+        self.assertIn("https://doi.org/10.1000/182", apa_cleaned)
+        self.assertIn("Smith, J. (2020)", apa_cleaned)
+
+    def test_option_sanitization_rejects_pseudo_options(self):
+        """Verifies that pseudo-options like 'Exchange' are sanitized to valid department options."""
+        from backend.academic_data import sanitize_option_name
+        opt = sanitize_option_name("Exchange", "Computer Engineering", "COLTECH")
+        self.assertEqual(opt, "Computer Networks and Systems")
+
+        opt2 = sanitize_option_name("Branch Exchange", "Computer Engineering", "COLTECH")
+        self.assertEqual(opt2, "Computer Networks and Systems")
+
+        opt_valid = sanitize_option_name("Software Engineering", "Computer Engineering", "COLTECH")
+        self.assertEqual(opt_valid, "Software Engineering")
+
+    def test_dissertation_structure_abbreviations_and_no_blank_page(self):
+        """Verifies standard acronym expansion, non-static LOT/LOF page numbers, and single cover page for dissertation."""
+        import docx
+        parsed = parse_document(TEST_DOCX)
+        # Verify repairing broken OCR abbreviations
+        parsed.abbreviations.append(("CODEC", "Coder"))
+        parsed.abbreviations.append(("SRTP", "Secure Real"))
+        parsed.abbreviations.append(("PJSIP", "PJSIP"))
+
+        req = ReformatRequest(
+            doc_type="dissertation_bsc",
+            school_type="coltech",
+            header_mode="center_crest",
+            metadata=parsed.metadata
+        )
+        out_path = os.path.join(OUT_DIR, "test_dissertation_quality_verification.docx")
+        restructure_document(parsed, req, out_path)
+        doc = docx.Document(out_path)
+
+        # 1. Exactly 1 cover page
+        uba_count = sum(1 for p in doc.paragraphs if p.text.strip() == "THE UNIVERSITY OF BAMENDA")
+        self.assertEqual(uba_count, 1, "Must have exactly 1 cover page")
+
+        # 2. Check acronym expansions: CODEC, SRTP, PJSIP
+        all_para_text = "\n".join([p.text for p in doc.paragraphs])
+        all_tbl_text = "\n".join(c.text for t in doc.tables for r in t.rows for c in r.cells)
+        full_text = all_para_text + "\n" + all_tbl_text
+        self.assertIn("Coder-Decoder", full_text)
+        self.assertIn("Secure Real-time Transport Protocol", full_text)
+
+        # 3. Check Headings are bold in the body
+        body_headings = [p for p in doc.paragraphs if ("CHAPTER 1" in p.text or p.text == "1.1 Background" or "General Objective:" in p.text) and "\t" not in p.text]
+        self.assertTrue(len(body_headings) > 0)
+        for p in body_headings:
+            has_bold = any(run.bold for run in p.runs)
+            self.assertTrue(has_bold, f"Heading '{p.text}' should have bold formatting")
+
 
 if __name__ == "__main__":
     unittest.main()

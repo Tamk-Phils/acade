@@ -80,6 +80,65 @@ def clean_title(candidate: str) -> Optional[str]:
         return None
     return cleaned
 
+def clean_academic_text(text: str) -> str:
+    """
+    Cleans OCR/UTF-8 corruptions, repairs punctuation spacing,
+    standardizes technical terminology, and removes raw draft placeholders.
+    """
+    if not text:
+        return text
+
+    # 1. Multi-byte / UTF-8 character encoding repairs
+    replacements = {
+        'â€™': "'", 'â€˜': "'", 'â€œ': '"', 'â€': '"',
+        'â€“': '–', 'â€”': '—', 'â€¢': '•', 'Ã©': 'é',
+        'Ã¨': 'è', 'Ã ': 'à', 'Ã§': 'ç', 'Â°': '°', 'â€¦': '...',
+        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+        '\u2013': '–', '\u2014': '—', '\u2022': '•', '\xa0': ' '
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+
+    # 2. Punctuation and spacing repairs
+    text = re.sub(r'\s+([,;.:!])', r'\1', text)
+    text = re.sub(r'([a-zA-Z0-9])([,;:])([a-zA-Z])', r'\1\2 \3', text)
+    text = re.sub(r'([a-zA-Z]{3,})\.([A-Z][a-z])', r'\1. \2', text)
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+
+    # 3. Technical terminology standardization
+    text = re.sub(r'\b(?:issabel\s*pbx|issabelpbx)\b', 'IssabelPBX', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bvoip\b', 'VoIP', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bzoiper\b', 'Zoiper', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(?:wi[- ]?fi|wifi)\b', 'Wi-Fi', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bethernet\b', 'Ethernet', text, flags=re.IGNORECASE)
+    text = re.sub(r'\binternet\b', 'Internet', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bsip\b', 'SIP', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bpjsip\b', 'PJSIP', text, flags=re.IGNORECASE)
+
+    # 4. Draft placeholder sanitization
+    text = re.sub(r'\[\s*(?:insert|todo|screenshot|detailed|figure|table)\b[^\]]*\]', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
+def clean_apa_reference(ref: str) -> str:
+    """Standardizes citations and references into clean APA 7th edition formatting."""
+    if not ref:
+        return ref
+    ref = clean_academic_text(ref)
+    # Standardize DOI format
+    ref = re.sub(r'(?:doi\s*[:=]\s*|https?://(?:dx\.)?doi\.org/)(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)', r'https://doi.org/\1', ref, flags=re.IGNORECASE)
+    # Fix spacing around author initials: "Smith, J.D." -> "Smith, J. D."
+    ref = re.sub(r'([A-Z]\.)([A-Z]\.)', r'\1 \2', ref)
+    # Fix spacing around year parentheses: "( 2021 )" -> "(2021)"
+    ref = re.sub(r'\(\s*(\d{4}[a-z]?)\s*\)', r'(\1)', ref)
+    # Ensure space before opening parenthesis when directly preceded by character/punctuation: "Smith, J.(2020)" -> "Smith, J. (2020)"
+    ref = re.sub(r'([A-Za-z0-9\.,])\(', r'\1 (', ref)
+    # Fix duplicate periods
+    ref = re.sub(r'\.{2,}', '.', ref)
+    # Ensure single space after comma
+    ref = re.sub(r',([^\s])', r', \1', ref)
+    return ref.strip()
+
 def extract_metadata_from_text_and_tables(text: str, tables_text: List[str] = None) -> DocumentMetadata:
     """Extract metadata using high-precision legal phrases, tables, and regex patterns."""
     meta = DocumentMetadata()
@@ -246,7 +305,10 @@ def parse_docx(file_path: str) -> ParsedDocument:
     in_abbrev = False
 
     for idx, p in enumerate(doc.paragraphs):
-        txt = p.text.strip()
+        raw_p = p.text.strip()
+        if not raw_p:
+            continue
+        txt = clean_academic_text(raw_p)
         if not txt:
             continue
 
@@ -276,21 +338,27 @@ def parse_docx(file_path: str) -> ParsedDocument:
             in_abbrev = False
 
         if in_lot:
+            page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', txt)
+            pg = page_m.group(1) if page_m else ""
             clean_lot = re.sub(r'[\.\s\t_]+\d+\s*$', '', txt).strip()
             if clean_lot and ("Table" in clean_lot or re.match(r'^\d+\.\d+', clean_lot)):
-                parsed.prelim_tables_list.append(clean_lot)
+                parsed.prelim_tables_list.append(f"{clean_lot}\t{pg}" if pg else clean_lot)
             continue
         elif in_lof:
+            page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', txt)
+            pg = page_m.group(1) if page_m else ""
             clean_lof = re.sub(r'[\.\s\t_]+\d+\s*$', '', txt).strip()
             if clean_lof and ("Figure" in clean_lof or "Fig" in clean_lof or re.match(r'^\d+\.\d+', clean_lof)):
-                parsed.prelim_figures_list.append(clean_lof)
+                parsed.prelim_figures_list.append(f"{clean_lof}\t{pg}" if pg else clean_lof)
             continue
         elif in_abbrev:
-            ab_m = re.match(r'^([A-Za-z0-9/&\s\-]{2,18})\s*(?:–|—|-|:|\t|\s{2,})\s*(.+)$', txt)
+            ab_m = re.match(r'^([A-Za-z0-9/&]{2,12})\s*(?::|\s+[-–—]\s+|\t+|\s{2,})\s*(.+)$', txt)
+            if not ab_m:
+                ab_m = re.match(r'^([A-Z0-9/&]{2,10})\s+([A-Za-z].+)$', txt)
             if ab_m:
                 acronym = ab_m.group(1).strip()
                 meaning = ab_m.group(2).strip()
-                if len(acronym) < 18 and len(meaning) > 2:
+                if len(acronym) <= 12 and len(meaning) >= 2:
                     parsed.abbreviations.append((acronym, meaning))
             continue
 
@@ -457,28 +525,50 @@ def parse_pdf(file_path: str) -> ParsedDocument:
                 in_lof = False
                 in_abbrev = False
 
+            line = clean_academic_text(line)
+            if not line:
+                continue
+
             if in_lot:
+                page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', line)
+                pg = page_m.group(1) if page_m else ""
                 clean_lot = re.sub(r'[\.\s\t_]+\d+\s*$', '', line).strip()
                 if clean_lot and ("Table" in clean_lot or re.match(r'^\d+\.\d+', clean_lot)):
-                    parsed.prelim_tables_list.append(clean_lot)
+                    parsed.prelim_tables_list.append(f"{clean_lot}\t{pg}" if pg else clean_lot)
                 continue
             elif in_lof:
+                page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', line)
+                pg = page_m.group(1) if page_m else ""
                 clean_lof = re.sub(r'[\.\s\t_]+\d+\s*$', '', line).strip()
                 if clean_lof and ("Figure" in clean_lof or "Fig" in clean_lof or re.match(r'^\d+\.\d+', clean_lof)):
-                    parsed.prelim_figures_list.append(clean_lof)
+                    parsed.prelim_figures_list.append(f"{clean_lof}\t{pg}" if pg else clean_lof)
                 continue
             elif in_abbrev:
-                ab_m = re.match(r'^([A-Za-z0-9/&\s\-]{2,18})\s*(?:–|—|-|:|\t|\s{2,})\s*(.+)$', line)
+                ab_m = re.match(r'^([A-Za-z0-9/&]{2,12})\s*(?::|\s+[-–—]\s+|\t+|\s{2,})\s*(.+)$', line)
+                if not ab_m:
+                    ab_m = re.match(r'^([A-Z0-9/&]{2,10})\s+([A-Za-z].+)$', line)
                 if ab_m:
                     acronym = ab_m.group(1).strip()
                     meaning = ab_m.group(2).strip()
-                    if len(acronym) < 18 and len(meaning) > 2:
+                    if len(acronym) <= 12 and len(meaning) >= 2:
                         parsed.abbreviations.append((acronym, meaning))
                 continue
 
             is_heading = False
             level = 0
             is_short = len(line) < 180 and not (line.count('.') > 2 and line.endswith('.'))
+            clean_up = line.strip().rstrip(':').upper()
+            semantic_subheadings = {
+                "CONCLUSION", "CONCLUSIONS", "RECOMMENDATIONS", "RECOMMENDATION", "PERSPECTIVES",
+                "GENERAL OBJECTIVE", "GENERAL OBJECTIVES", "SPECIFIC OBJECTIVES", "SPECIFIC OBJECTIVE",
+                "PROBLEM STATEMENT", "STATEMENT OF THE PROBLEM", "RESEARCH QUESTIONS", "RESEARCH HYPOTHESES",
+                "SCOPE OF THE STUDY", "SCOPE AND DELIMITATION", "SIGNIFICANCE OF THE STUDY",
+                "LIMITATIONS OF THE STUDY", "ORGANIZATION OF THE DISSERTATION", "ORGANIZATION OF THE REPORT",
+                "METHODOLOGY OVERVIEW", "SYSTEM ARCHITECTURE", "SYSTEM DESIGN", "SYSTEM IMPLEMENTATION",
+                "HARDWARE REQUIREMENTS", "SOFTWARE REQUIREMENTS", "FUNCTIONAL REQUIREMENTS",
+                "NON-FUNCTIONAL REQUIREMENTS", "TESTING AND VALIDATION", "SUMMARY OF FINDINGS",
+                "FUTURE WORK"
+            }
             if is_short:
                 if re.match(r'^(?:CHAPTER\s+\d+|CHAPITRE\s+\d+)', line, re.IGNORECASE):
                     is_heading = True
@@ -487,6 +577,9 @@ def parse_pdf(file_path: str) -> ParsedDocument:
                     num_dots = line.split()[0].rstrip('.').count('.')
                     is_heading = True
                     level = min(4, num_dots + 1)
+                elif clean_up in semantic_subheadings or any(clean_up.startswith(sh) for sh in ["GENERAL OBJECTIVE", "SPECIFIC OBJECTIVE", "RESEARCH QUESTION", "RECOMMENDATION", "PERSPECTIVE", "LIMITATION"]):
+                    is_heading = True
+                    level = 2
 
             para_info = {
                 "text": line,

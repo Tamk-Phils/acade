@@ -409,7 +409,8 @@ def resolve_department_and_option(faculty_code: str, raw_dept: str, raw_opt: Opt
     """
     Distinguishes and resolves Department vs Option (Specialization).
     Prevents options like 'Information Technology and Cybersecurity' from replacing
-    the actual Department 'Computer Engineering' in headers.
+    the actual Department 'Computer Engineering' in headers, and cleans up erroneous
+    option extractions (e.g. 'Exchange' from Private Branch Exchange).
     """
     dept = (raw_dept or "").strip()
     opt = (raw_opt or "").strip()
@@ -426,9 +427,52 @@ def resolve_department_and_option(faculty_code: str, raw_dept: str, raw_opt: Opt
             opt = dept
         dept = "Electrical and Electronic Engineering"
 
+    # Reject erroneous keywords extracted from telecommunications text (e.g. Branch Exchange)
+    invalid_opt_keywords = ["exchange", "branch exchange", "pabx", "telephone exchange", "none", "n/a", "unknown", "study", "research"]
+    if opt.lower() in invalid_opt_keywords or len(opt) < 3:
+        if "computer" in dept.lower():
+            opt = "Computer Networks and Systems"
+        elif "electrical" in dept.lower() or "electronic" in dept.lower():
+            opt = "Telecommunications and Networking"
+        else:
+            opt = dept
+
+    # Validate option against known options for Computer Engineering if applicable
+    if "computer" in dept.lower():
+        known_computer_opts = [
+            "Software Engineering",
+            "Information Technology and Cybersecurity",
+            "Computer Networks and Systems",
+            "Artificial Intelligence and Data Science"
+        ]
+        matched_valid = False
+        for ko in known_computer_opts:
+            if ko.lower() == opt.lower():
+                opt = ko
+                matched_valid = True
+                break
+            elif ko.lower() in opt.lower() or opt.lower() in ko.lower():
+                opt = ko
+                matched_valid = True
+                break
+        if not matched_valid:
+            if any(k in opt.lower() for k in ["network", "voip", "telecom", "routing", "switch", "pabx"]):
+                opt = "Computer Networks and Systems"
+            elif any(k in opt.lower() for k in ["cyber", "security", "phishing", "forensics"]):
+                opt = "Information Technology and Cybersecurity"
+            elif any(k in opt.lower() for k in ["web", "mobile", "app", "cloud", "code", "dev"]):
+                opt = "Software Engineering"
+            elif any(k in opt.lower() for k in ["ai", "machine learning", "data", "deep learning"]):
+                opt = "Artificial Intelligence and Data Science"
+
     # If option is missing or identical to department, provide standard default or keep clean
     if not opt:
         opt = dept
 
     return dept, opt
 
+
+def sanitize_option_name(raw_opt: str, raw_dept: str = "Computer Engineering", faculty_code: str = "coltech") -> str:
+    """Convenience helper to sanitize an option name directly."""
+    _, opt = resolve_department_and_option(faculty_code, raw_dept, raw_opt)
+    return opt

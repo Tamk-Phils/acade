@@ -14,12 +14,92 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import parse_xml, OxmlElement
 from docx.oxml.ns import nsdecls, qn, nsmap
 from backend.models import DocumentMetadata, ReformatRequest, GroupMember
-from backend.parser import ParsedDocument
+from backend.parser import ParsedDocument, clean_academic_text, clean_apa_reference
 from backend.academic_data import UBA_ESTABLISHMENTS, resolve_department_and_option
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 UBA_LOGO_PATH = os.path.join(ASSETS_DIR, "uba_logo.png")
 COLTECH_LOGO_PATH = os.path.join(ASSETS_DIR, "coltech_logo.png")
+
+STANDARD_ACRONYMS = {
+    "CODEC": "Coder-Decoder",
+    "SRTP": "Secure Real-time Transport Protocol",
+    "RTP": "Real-time Transport Protocol",
+    "SIP": "Session Initiation Protocol",
+    "PJSIP": "Open Source SIP, Media, and NAT Traversal Library",
+    "PBX": "Private Branch Exchange",
+    "IP-PBX": "Internet Protocol Private Branch Exchange",
+    "VOIP": "Voice over Internet Protocol",
+    "PSTN": "Public Switched Telephone Network",
+    "IVR": "Interactive Voice Response",
+    "QOS": "Quality of Service",
+    "DNS": "Domain Name System",
+    "DHCP": "Dynamic Host Configuration Protocol",
+    "TCP": "Transmission Control Protocol",
+    "UDP": "User Datagram Protocol",
+    "LAN": "Local Area Network",
+    "WAN": "Wide Area Network",
+    "WLAN": "Wireless Local Area Network",
+    "NAT": "Network Address Translation",
+    "TLS": "Transport Layer Security",
+    "API": "Application Programming Interface",
+    "GUI": "Graphical User Interface",
+    "CLI": "Command Line Interface",
+    "OS": "Operating System",
+    "VM": "Virtual Machine",
+    "CPU": "Central Processing Unit",
+    "RAM": "Random Access Memory",
+    "SDP": "Session Description Protocol",
+    "DTMF": "Dual-Tone Multi-Frequency",
+    "ISDN": "Integrated Services Digital Network",
+    "GSM": "Global System for Mobile Communications",
+    "CDR": "Call Detail Record",
+    "DSP": "Digital Signal Processor",
+}
+
+SEMANTIC_HEADINGS = {
+    "CONCLUSION", "CONCLUSIONS", "RECOMMENDATIONS", "RECOMMENDATION", "PERSPECTIVES",
+    "GENERAL OBJECTIVE", "GENERAL OBJECTIVES", "SPECIFIC OBJECTIVES", "SPECIFIC OBJECTIVE",
+    "PROBLEM STATEMENT", "STATEMENT OF THE PROBLEM", "RESEARCH QUESTIONS", "RESEARCH QUESTION",
+    "RESEARCH HYPOTHESES", "RESEARCH HYPOTHESIS", "SCOPE OF THE STUDY", "SCOPE AND DELIMITATION",
+    "SIGNIFICANCE OF THE STUDY", "LIMITATIONS OF THE STUDY", "LIMITATION OF THE STUDY",
+    "ORGANIZATION OF THE DISSERTATION", "ORGANIZATION OF THE REPORT",
+    "METHODOLOGY OVERVIEW", "SYSTEM ARCHITECTURE", "SYSTEM DESIGN", "SYSTEM IMPLEMENTATION",
+    "HARDWARE REQUIREMENTS", "SOFTWARE REQUIREMENTS", "FUNCTIONAL REQUIREMENTS",
+    "NON-FUNCTIONAL REQUIREMENTS", "TESTING AND VALIDATION", "SUMMARY OF FINDINGS",
+    "FUTURE WORK"
+}
+
+def set_apa_table_borders(table: docx.table.Table):
+    """Applies official APA 7th Edition 3-line horizontal borders (no vertical lines)."""
+    tblPr = table._tbl.tblPr
+    borders = parse_xml(r'''
+        <w:tblBorders %s>
+            <w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/>
+            <w:left w:val="none"/>
+            <w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/>
+            <w:right w:val="none"/>
+            <w:insideH w:val="none"/>
+            <w:insideV w:val="none"/>
+        </w:tblBorders>
+    ''' % nsdecls('w'))
+    old_borders = safe_xpath(tblPr, './w:tblBorders')
+    if old_borders:
+        tblPr.remove(old_borders[0])
+    tblPr.append(borders)
+
+    if table.rows:
+        for cell in table.rows[0].cells:
+            tcPr = cell._tc.get_or_add_tcPr()
+            tcBorders = parse_xml(r'''
+                <w:tcBorders %s>
+                    <w:bottom w:val="single" w:sz="6" w:space="0" w:color="000000"/>
+                </w:tcBorders>
+            ''' % nsdecls('w'))
+            old_tcBorders = safe_xpath(tcPr, './w:tcBorders')
+            if old_tcBorders:
+                tcPr.remove(old_tcBorders[0])
+            tcPr.append(tcBorders)
 
 INTRO_HEADING_PATTERN = re.compile(
     r'^(?:(?:1(?:\.[01])?\.?\s*)?(?:GENERAL\s+)?INTRODUCTION|CHAPTER\s+1\s*[:\-–—]?\s*(?:GENERAL\s+)?INTRODUCTION)\s*[:.\-]?$',
@@ -441,10 +521,14 @@ def add_header_banner(doc: docx.Document, meta: DocumentMetadata, doc_type: str 
 
 
 def get_purpose_clause(doc_type: str, meta: DocumentMetadata) -> str:
-    """Generates the official degree award purpose clause."""
-    school_name = meta.faculty if meta.faculty else "the College of Technology"
-    if "College of Technology" in school_name and "(COLTECH)" not in school_name:
-        school_name += " (COLTECH)"
+    """Generates the official degree award purpose clause with title-cased institutions and valid options."""
+    raw_school = (meta.faculty or "").strip()
+    if not raw_school or "COLLEGE OF TECHNOLOGY" in raw_school.upper():
+        school_name = "the College of Technology (COLTECH)"
+    elif raw_school.lower().startswith("the "):
+        school_name = raw_school
+    else:
+        school_name = f"the {raw_school.title()}"
 
     deg = meta.degree
     dept, opt = resolve_department_and_option(meta.faculty_code, meta.department, meta.option)
@@ -497,11 +581,12 @@ def get_purpose_clause(doc_type: str, meta: DocumentMetadata) -> str:
             f"of The University of Bamenda for Course {meta.course_code}: {meta.course_title}."
         )
     else:
-        # Default BSc
+        # Default undergraduate dissertation
+        deg_str = "Bachelor of Science (B.Sc)" if "Science" in str(deg) else "Bachelor of Technology (B.Tech)"
         return (
             f"A Dissertation Submitted to the Department of {dept} in {school_name} "
             f"of The University of Bamenda in Partial Fulfillment of the Requirements for the Award "
-            f"of a Bachelor of Science (B.Sc) Degree in {opt}."
+            f"of a {deg_str} Degree in {opt}."
         )
 
 
@@ -1151,12 +1236,27 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
         p_dt.paragraph_format.line_spacing = 1.5
         p_dt.paragraph_format.space_after = Pt(40)
 
+        raw_school = (meta.faculty or "").strip()
+        if not raw_school or "COLLEGE OF TECHNOLOGY" in raw_school.upper():
+            school_name = "the College of Technology (COLTECH)"
+        elif raw_school.lower().startswith("the "):
+            school_name = raw_school
+        else:
+            school_name = f"the {raw_school.title()}"
+
+        deg_str = "Bachelor of Science (B.Sc)" if "Science" in str(meta.degree) else "Bachelor of Technology (B.Tech)"
+        if "Master" in str(meta.degree) or "MTech" in str(meta.degree_code):
+            deg_str = "Master of Technology (M.Tech)"
+        elif "Doctor" in str(meta.degree) or "PhD" in str(meta.degree_code):
+            deg_str = "Doctor of Philosophy (Ph.D)"
+
         decl_text = (
             f"I, {meta.author.upper()}, registration N◦ : {meta.reg_number}, in the Department of "
-            f"{resolved_dept} in {meta.faculty} of The University of Bamenda hereby declare that, "
+            f"{resolved_dept} in {school_name} of The University of Bamenda hereby declare that, "
             f"this research proposal titled “{meta.title}” is my original work. It has not been presented in any "
-            f"application for a degree or any academic pursuit. I have acknowledged all borrowed ideas "
-            f"nationally and internationally through citations."
+            f"previous application for a degree or academic distinction. I have duly acknowledged and "
+            f"referenced all scholarly sources and ideas consulted in this study in accordance with "
+            f"academic integrity standards."
         )
         r_dt = p_dt.add_run(decl_text)
         r_dt.font.name = "Times New Roman"
@@ -1180,6 +1280,20 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
 
     else:
         # Standard Dissertation / Thesis / Capstone Project
+        raw_school = (meta.faculty or "").strip()
+        if not raw_school or "COLLEGE OF TECHNOLOGY" in raw_school.upper():
+            school_name = "the College of Technology (COLTECH)"
+        elif raw_school.lower().startswith("the "):
+            school_name = raw_school
+        else:
+            school_name = f"the {raw_school.title()}"
+
+        deg_str = "Bachelor of Science (B.Sc)" if "Science" in str(meta.degree) else "Bachelor of Technology (B.Tech)"
+        if "Master" in str(meta.degree) or "MTech" in str(meta.degree_code):
+            deg_str = "Master of Technology (M.Tech)"
+        elif "Doctor" in str(meta.degree) or "PhD" in str(meta.degree_code):
+            deg_str = "Doctor of Philosophy (Ph.D)"
+
         # 1. Declaration of Originality of Study (Page ii)
         p_dh = doc.add_paragraph()
         p_dh.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1198,10 +1312,11 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
 
         decl_text = (
             f"I, {meta.author.upper()}, registration N◦ : {meta.reg_number}, in the Department of "
-            f"{resolved_dept} in {meta.faculty} of The University of Bamenda hereby declare that, "
+            f"{resolved_dept} in {school_name} of The University of Bamenda hereby declare that, "
             f"this work titled “{meta.title}” is my original work. It has not been presented in any "
-            f"application for a degree or any academic pursuit. I have acknowledged all borrowed ideas "
-            f"nationally and internationally through citations."
+            f"previous application for a degree or academic distinction. I have duly acknowledged and "
+            f"referenced all scholarly sources and ideas consulted in this study in accordance with "
+            f"academic integrity standards."
         )
         r_dt = p_dt.add_run(decl_text)
         r_dt.font.name = "Times New Roman"
@@ -1243,7 +1358,7 @@ def build_statutory_prelims(doc: docx.Document, meta: DocumentMetadata, doc_type
         cert_text = (
             f"This is to certify that this {doc_term} titled “{meta.title}” is the original work of "
             f"{meta.author.upper()}. This work is submitted in partial fulfillment of the requirements for "
-            f"the award of a {meta.degree} Degree in {resolved_opt} in {meta.faculty} of "
+            f"the award of a {deg_str} Degree in {resolved_opt} in {school_name} of "
             f"The University of Bamenda, Cameroon."
         )
         r_ct = p_ct.add_run(cert_text)
@@ -1421,7 +1536,7 @@ def build_abstract_and_resume(doc: docx.Document, meta: DocumentMetadata, parsed
     doc.add_page_break()
 
 
-def build_assignment_acknowledgements(doc: docx.Document, meta: DocumentMetadata):
+def build_assignment_acknowledgements(doc: docx.Document, meta: DocumentMetadata, add_page_break: bool = True):
     """Builds official Acknowledgements page for Technical Course Assignments."""
     p_h = doc.add_paragraph()
     p_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1454,7 +1569,8 @@ def build_assignment_acknowledgements(doc: docx.Document, meta: DocumentMetadata
     r_t.font.name = "Times New Roman"
     r_t.font.size = Pt(12)
 
-    doc.add_page_break()
+    if add_page_break:
+        doc.add_page_break()
 
 
 def build_table_of_contents(
@@ -1462,7 +1578,8 @@ def build_table_of_contents(
     parsed: ParsedDocument,
     doc_type: str = "dissertation_bsc",
     body_paras: Optional[List[Dict[str, Any]]] = None,
-    custom_rules: Optional[CustomFormattingRules] = None
+    custom_rules: Optional[CustomFormattingRules] = None,
+    add_page_break: bool = True
 ):
     """Builds a formatted, dynamically accurate Table of Contents with dot leaders and aligned pages."""
     rules = custom_rules or CustomFormattingRules()
@@ -1598,12 +1715,21 @@ def build_table_of_contents(
 
             # Match explicit chapter heading
             ch_m = re.match(r'^(?:CHAPTER|CHAPITRE)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-–]\s*|\s+)(.*)$', txt, re.IGNORECASE)
+            # Match conclusion heading
+            concl_m = re.match(r'^(?:(?:CHAPTER|CHAPITRE)\s+5|5[\.\s]+|CONCLUSION|CONCLUSIONS)\b(?:\s*[:\-–—]\s*|\s*)(.*)$', txt, re.IGNORECASE)
             # Match section heading e.g. "1.1 Background"
             sec_m = re.match(r'^([1-9])\.(\d+)(?:\s*[:\-–]\s*|\s+)(.*)$', txt)
             # Match assignment questions/tasks
             task_m = re.match(r'^(?:QUESTION|TASK|EXERCISE|PROBLEM|PART|SECTION)\s*(\d+|[IVXLCDM]+)?(?:\s*[:\-–]\s*|\s+)(.*)$', txt, re.IGNORECASE)
 
-            if ch_m:
+            if concl_m and 5 not in seen_chapters and doc_type not in ["assignment", "proposal"]:
+                seen_chapters.add(5)
+                cur_p += 1
+                word_count = 0
+                sub = concl_m.group(1).strip().upper() if concl_m.group(1) else "CONCLUSION AND RECOMMENDATIONS"
+                body_items.append((f"CHAPTER 5: {sub}", str(cur_p), 0, True))
+
+            elif ch_m:
                 num_str = ch_m.group(1).upper()
                 ch_num = roman_map.get(num_str, int(num_str) if num_str.isdigit() else 1)
                 if ch_num not in seen_chapters:
@@ -1653,6 +1779,17 @@ def build_table_of_contents(
                     cur_p += 1
                     word_count = 0
                     body_items.append((txt[:60].upper(), str(cur_p), 0, True))
+
+        # Auto-inject Chapter 5 if missing from dissertation/thesis/project
+        if any(c in seen_chapters for c in [1, 2, 3, 4]) and 5 not in seen_chapters and doc_type not in ["assignment", "proposal"]:
+            cur_p += 2
+            seen_chapters.add(5)
+            ch5_title = "CHAPTER 5: CONCLUSION AND RECOMMENDATIONS"
+            ref_idx = next((i for i, item in enumerate(body_items) if "REFERENCES" in item[0].upper()), -1)
+            if ref_idx >= 0:
+                body_items.insert(ref_idx, (ch5_title, str(cur_p), 0, True))
+            else:
+                body_items.append((ch5_title, str(cur_p), 0, True))
 
     # Fallback only if no chapters or sections could be extracted from document text
     if not body_items:
@@ -1737,10 +1874,11 @@ def build_table_of_contents(
                 r_p.font.bold = True
             ensure_run_fonts(r_p, rules.font_name)
 
-    doc.add_page_break()
+    if add_page_break:
+        doc.add_page_break()
 
 
-def build_list_of_tables(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None):
+def build_list_of_tables(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None, add_page_break: bool = True):
     """Builds the formal LIST OF TABLES preliminary page with dot leaders to right margin."""
     rules = custom_rules or CustomFormattingRules()
     p_h = doc.add_paragraph()
@@ -1756,9 +1894,9 @@ def build_list_of_tables(doc: docx.Document, parsed: ParsedDocument, custom_rule
     if not items and (getattr(parsed, "tables_count", 0) > 0 or getattr(parsed, "extracted_tables", None)):
         count = max(parsed.tables_count, len(getattr(parsed, "extracted_tables", [])))
         for i in range(count):
-            items.append(f"Table 3.{i+1}: Specifications and Empirical Matrix\t{15 + i*3}")
+            items.append(f"Table 3.{i+1}: Specifications and Empirical Matrix\t{14 + i*3}")
 
-    for item in items:
+    for idx, item in enumerate(items):
         p_row = doc.add_paragraph()
         p_row.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p_row.paragraph_format.line_spacing = 1.15
@@ -1767,7 +1905,7 @@ def build_list_of_tables(doc: docx.Document, parsed: ParsedDocument, custom_rule
         p_row.paragraph_format.tab_stops.add_tab_stop(Cm(15.0), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
 
         page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', item)
-        pg_val = page_m.group(1) if page_m else "15"
+        pg_val = page_m.group(1) if page_m else str(14 + idx * 3)
         clean_title = re.sub(r'[\.\s\t_]+\d+\s*$', '', item).strip()
 
         r_t = p_row.add_run(clean_title)
@@ -1778,10 +1916,11 @@ def build_list_of_tables(doc: docx.Document, parsed: ParsedDocument, custom_rule
         r_p.font.size = Pt(11)
         ensure_run_fonts(r_p, rules.font_name)
 
-    doc.add_page_break()
+    if add_page_break:
+        doc.add_page_break()
 
 
-def build_list_of_figures(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None):
+def build_list_of_figures(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None, add_page_break: bool = True):
     """Builds the formal LIST OF FIGURES preliminary page with dot leaders to right margin."""
     rules = custom_rules or CustomFormattingRules()
     p_h = doc.add_paragraph()
@@ -1798,7 +1937,7 @@ def build_list_of_figures(doc: docx.Document, parsed: ParsedDocument, custom_rul
         for i in range(parsed.figures_count):
             items.append(f"Figure 1.{i+1}: System Architecture and Flow Diagram\t{5 + i*4}")
 
-    for item in items:
+    for idx, item in enumerate(items):
         p_row = doc.add_paragraph()
         p_row.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p_row.paragraph_format.line_spacing = 1.15
@@ -1807,7 +1946,7 @@ def build_list_of_figures(doc: docx.Document, parsed: ParsedDocument, custom_rul
         p_row.paragraph_format.tab_stops.add_tab_stop(Cm(15.0), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
 
         page_m = re.search(r'[\.\s\t_]+(\d+)\s*$', item)
-        pg_val = page_m.group(1) if page_m else "5"
+        pg_val = page_m.group(1) if page_m else str(5 + idx * 4)
         clean_title = re.sub(r'[\.\s\t_]+\d+\s*$', '', item).strip()
 
         r_t = p_row.add_run(clean_title)
@@ -1818,10 +1957,11 @@ def build_list_of_figures(doc: docx.Document, parsed: ParsedDocument, custom_rul
         r_p.font.size = Pt(11)
         ensure_run_fonts(r_p, rules.font_name)
 
-    doc.add_page_break()
+    if add_page_break:
+        doc.add_page_break()
 
 
-def build_list_of_abbreviations(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None):
+def build_list_of_abbreviations(doc: docx.Document, parsed: ParsedDocument, custom_rules: Optional[CustomFormattingRules] = None, add_page_break: bool = True):
     """Builds the formal LIST OF ABBREVIATIONS AND ACRONYMS preliminary page."""
     rules = custom_rules or CustomFormattingRules()
     p_h = doc.add_paragraph()
@@ -1834,14 +1974,36 @@ def build_list_of_abbreviations(doc: docx.Document, parsed: ParsedDocument, cust
     ensure_run_fonts(r_h, rules.font_name)
 
     abbrevs = getattr(parsed, "abbreviations", [])
-    if not abbrevs:
+    cleaned_abbrevs = []
+    seen_acr = set()
+    for acronym, definition in abbrevs:
+        acr_up = acronym.strip().upper()
+        if acr_up in seen_acr:
+            continue
+        seen_acr.add(acr_up)
+        defn = definition.strip()
+        if acr_up in STANDARD_ACRONYMS:
+            if len(defn.split()) <= 1 or defn.lower() in ["coder", "secure real", "transport", "real"]:
+                defn = STANDARD_ACRONYMS[acr_up]
+        cleaned_abbrevs.append((acronym, defn))
+
+    # Add standard networking/telecom abbreviations if mentioned in text but missing from list
+    raw_doc_text = getattr(parsed, "raw_text", "")
+    for std_acr, std_def in STANDARD_ACRONYMS.items():
+        if std_acr not in seen_acr and re.search(rf'\b{std_acr}\b', raw_doc_text):
+            cleaned_abbrevs.append((std_acr, std_def))
+            seen_acr.add(std_acr)
+
+    if not cleaned_abbrevs:
         return
+
+    cleaned_abbrevs.sort(key=lambda x: x[0].upper())
 
     tbl = doc.add_table(rows=0, cols=2)
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     tbl.autofit = False
 
-    for acronym, definition in abbrevs:
+    for acronym, definition in cleaned_abbrevs:
         row = tbl.add_row()
         c0 = row.cells[0]
         c1 = row.cells[1]
@@ -1869,7 +2031,8 @@ def build_list_of_abbreviations(doc: docx.Document, parsed: ParsedDocument, cust
         r1.font.size = Pt(10.5)
         ensure_run_fonts(r1, rules.font_name)
 
-    doc.add_page_break()
+    if add_page_break:
+        doc.add_page_break()
 
 
 def sync_toc_page_numbers(docx_path: str, pdf_path: str) -> bool:
@@ -1902,52 +2065,56 @@ def sync_toc_page_numbers(docx_path: str, pdf_path: str) -> bool:
             txt = page.extract_text() or ""
             lines = [l.strip() for l in txt.split('\n') if l.strip()]
             for line in lines:
-                ch_m = re.match(r'^(CHAPTER\s+\d+|REFERENCES|APPENDICES)', line, re.IGNORECASE)
+                ch_m = re.match(r'^(CHAPTER\s+(?:\d+|[IVXLCDM]+)|REFERENCES|APPENDICES|CONCLUSION|RECOMMENDATIONS)\b', line, re.IGNORECASE)
                 sec_m = re.match(r'^(\d+\.\d+(?:\.\d+)?)\s+', line)
-                tbl_m = re.search(r'(Table\s+\d+\.\d+)', line, re.IGNORECASE)
-                fig_m = re.search(r'(Figure\s+\d+\.\d+)', line, re.IGNORECASE)
+                tbl_m = re.search(r'\b(?:Table|Tableau)\s+(\d+(?:[\.\-]\d+)?)\b', line, re.IGNORECASE)
+                fig_m = re.search(r'\b(?:Figure|Fig\.?)\s+(\d+(?:[\.\-]\d+)?)\b', line, re.IGNORECASE)
                 if ch_m:
                     k = ch_m.group(1).upper()
                     if k not in heading_pages:
                         heading_pages[k] = body_p
+                    if "CONCLUSION" in k and "CHAPTER 5" not in heading_pages:
+                        heading_pages["CHAPTER 5"] = body_p
                 if sec_m:
                     k = sec_m.group(1)
                     if k not in heading_pages:
                         heading_pages[k] = body_p
                 if tbl_m:
-                    k = tbl_m.group(1).title()
-                    if k not in heading_pages:
-                        heading_pages[k] = body_p
+                    tbl_key = f"Table {tbl_m.group(1)}"
+                    if tbl_key not in heading_pages:
+                        heading_pages[tbl_key] = body_p
                 if fig_m:
-                    k = fig_m.group(1).title()
-                    if k not in heading_pages:
-                        heading_pages[k] = body_p
+                    fig_key = f"Figure {fig_m.group(1)}"
+                    if fig_key not in heading_pages:
+                        heading_pages[fig_key] = body_p
 
         # Open docx and update TOC / LOT / LOF paragraphs
         d = docx.Document(docx_path)
         modified = False
-        in_toc = False
+        in_prelim_list = False
 
         for p in d.paragraphs:
-            t = p.text.strip()
-            if "TABLE OF CONTENTS" in t.upper() or "LIST OF TABLES" in t.upper() or "LIST OF FIGURES" in t.upper():
-                in_toc = True
+            t = p.text.strip().upper()
+            if any(h in t for h in ["TABLE OF CONTENTS", "LIST OF TABLES", "LIST OF FIGURES"]):
+                in_prelim_list = True
                 continue
             if re.match(r'^(?:CHAPTER|CHAPITRE)\s+1\b', t, re.IGNORECASE) and not re.search(r'[\.\s\t_]+\d+\s*$', t):
-                in_toc = False
+                in_prelim_list = False
                 break
 
-            if in_toc and "\t" in p.text:
+            if in_prelim_list and "\t" in p.text:
                 parts = p.text.split("\t")
                 left_title = parts[0].strip()
                 target_page = None
 
                 # Check chapter match
-                ch_m = re.match(r'^(CHAPTER\s+\d+|REFERENCES|APPENDICES)', left_title, re.IGNORECASE)
+                ch_m = re.match(r'^(CHAPTER\s+(?:\d+|[IVXLCDM]+)|REFERENCES|APPENDICES|CONCLUSION|RECOMMENDATIONS)', left_title, re.IGNORECASE)
                 if ch_m:
                     k = ch_m.group(1).upper()
                     if k in heading_pages:
                         target_page = heading_pages[k]
+                    elif "CHAPTER 5" in k and "CONCLUSION" in heading_pages:
+                        target_page = heading_pages["CONCLUSION"]
 
                 # Check section match
                 if not target_page:
@@ -1959,22 +2126,18 @@ def sync_toc_page_numbers(docx_path: str, pdf_path: str) -> bool:
 
                 # Check table/figure match
                 if not target_page:
-                    tf_m = re.search(r'((?:Table|Figure)\s+\d+\.\d+)', left_title, re.IGNORECASE)
+                    tf_m = re.search(r'((?:Table|Figure)\s+\d+(?:[\.\-]\d+)?)', left_title, re.IGNORECASE)
                     if tf_m:
-                        k = tf_m.group(1).title()
-                        if k in heading_pages:
-                            target_page = heading_pages[k]
+                        matched_key = tf_m.group(1).title()
+                        if matched_key in heading_pages:
+                            target_page = heading_pages[matched_key]
 
                 if target_page:
                     for r in reversed(p.runs):
-                        if r.text.strip().isdigit():
-                            if r.text.strip() != str(target_page):
-                                r.text = str(target_page)
-                                modified = True
-                            break
-                        elif "\t" in r.text:
-                            if r.text.strip() != f"\t{target_page}".strip():
-                                r.text = f"\t{target_page}"
+                        if r.text.strip().isdigit() or "\t" in r.text:
+                            cur_val = r.text.strip()
+                            if cur_val != str(target_page):
+                                r.text = f"\t{target_page}" if "\t" in r.text else str(target_page)
                                 modified = True
                             break
 
@@ -2195,7 +2358,8 @@ def format_body_paragraph(
         p.paragraph_format.first_line_indent = Inches(-0.5)
         jc = p._p.get_or_add_pPr().get_or_add_jc()
         jc.set(qn('w:val'), 'both')
-        run = p.add_run(text)
+        clean_text = clean_apa_reference(text)
+        run = p.add_run(clean_text)
         run.font.name = rules.font_name
         run.font.size = Pt(rules.font_size_pt)
         ensure_run_fonts(run, rules.font_name)
@@ -2205,7 +2369,8 @@ def format_body_paragraph(
         p.paragraph_format.space_after = Pt(6)
         jc = p._p.get_or_add_pPr().get_or_add_jc()
         jc.set(qn('w:val'), 'both')
-        run = p.add_run(text)
+        clean_text = clean_academic_text(text)
+        run = p.add_run(clean_text)
         run.font.name = rules.font_name
         run.font.size = Pt(rules.font_size_pt)
         ensure_run_fonts(run, rules.font_name)
@@ -2223,7 +2388,8 @@ def _transfer_and_format_drawing_paragraph(
     """
     Safely copies a drawing/picture paragraph from source_docx into dest_doc,
     re-linking its binary image parts to prevent broken or missing images,
-    centers the figure, and provides standard academic captioning below the figure.
+    scales down oversized drawings to preserve margins, centers the figure,
+    and provides standard academic captioning below the figure.
     """
     p_copy = copy.deepcopy(child)
     embed_attr = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed'
@@ -2247,6 +2413,23 @@ def _transfer_and_format_drawing_paragraph(
                     if hasattr(src_part, 'blob'):
                         new_rId, _ = dest_doc.part.get_or_add_image(io.BytesIO(src_part.blob))
                         elem.attrib[rel_attr] = new_rId
+
+    # Scale oversized drawings to fit within 14.5cm printable width
+    max_cx = 5220000  # 14.5 cm in EMUs
+    for elem in p_copy.iter():
+        if elem.tag.endswith('extent') or elem.tag.endswith('ext'):
+            try:
+                cx_str = elem.attrib.get('cx')
+                cy_str = elem.attrib.get('cy')
+                if cx_str and cy_str:
+                    cx = int(cx_str)
+                    cy = int(cy_str)
+                    if cx > max_cx and cx > 0:
+                        scale = max_cx / cx
+                        elem.attrib['cx'] = str(int(max_cx))
+                        elem.attrib['cy'] = str(int(cy * scale))
+            except Exception:
+                pass
 
     # Strip text runs that might be inside the drawing paragraph to keep picture clean
     for r in list(p_copy):
@@ -2292,7 +2475,7 @@ def _transfer_and_format_table(
     """
     Safely copies a table from source_docx into dest_doc,
     applies professional academic captioning ABOVE the table if missing,
-    centers the table, and standardizes fonts and borders.
+    centers the table, applies APA 7th edition borders, and standardizes fonts.
     """
     ch_key = current_chapter if current_chapter > 0 else 1
     # Check if preceding paragraph was an explicit table caption
@@ -2330,6 +2513,7 @@ def _transfer_and_format_table(
     dest_doc._body._body._insert_tbl(tbl_copy)
     t = docx.table.Table(tbl_copy, dest_doc)
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    set_apa_table_borders(t)
 
     # Format table text and header row
     for r_idx, row in enumerate(t.rows):
@@ -2381,11 +2565,8 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
             continue
         body_paras.append(p)
 
-    # 3. Build Cover Page & Title Page (Section 0 - unnumbered)
-    has_title_page = (req.doc_type not in ["internship", "assignment"])
-    build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=has_title_page, custom_rules=rules)
-    if has_title_page:
-        build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=False, custom_rules=rules)
+    # 3. Build Cover Page (Section 0 - unnumbered)
+    build_cover_page(doc, meta, req.doc_type, req.header_mode, add_page_break=False, custom_rules=rules)
 
     # 4. Add Section Break for Preliminaries (Section 1 - centered lowerRoman from ii)
     prelim_section = doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
@@ -2418,44 +2599,46 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
     has_lof = bool(getattr(parsed, "prelim_figures_list", None) or getattr(parsed, "figures_count", 0) > 0)
     has_abbrevs = bool(getattr(parsed, "abbreviations", None))
 
-    # 5. Build Preliminaries according to Document Type
+    # 5. Build Preliminaries according to Document Type (ensuring no trailing page break before Section 2)
     if req.doc_type == "assignment":
         is_group_ass = bool(meta.is_group_assignment or (meta.group_members and len(meta.group_members) > 1))
         members_count = len(meta.group_members) if meta.group_members else (4 if meta.is_group_assignment else 1)
         if is_group_ass and members_count > 5:
             build_group_members_page(doc, meta)
-        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
+        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules, add_page_break=True)
         if has_lot:
-            build_list_of_tables(doc, parsed, custom_rules=rules)
+            build_list_of_tables(doc, parsed, custom_rules=rules, add_page_break=True)
         if has_lof:
-            build_list_of_figures(doc, parsed, custom_rules=rules)
+            build_list_of_figures(doc, parsed, custom_rules=rules, add_page_break=True)
         if has_abbrevs:
-            build_list_of_abbreviations(doc, parsed, custom_rules=rules)
+            build_list_of_abbreviations(doc, parsed, custom_rules=rules, add_page_break=True)
         doc.add_page_break()
-        build_assignment_acknowledgements(doc, meta)
+        build_assignment_acknowledgements(doc, meta, add_page_break=False)
 
     elif req.doc_type == "internship":
         build_internship_prelims(doc, meta, parsed)
-        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
+        last_prelim = "abbrevs" if has_abbrevs else ("lof" if has_lof else ("lot" if has_lot else "toc"))
+        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules, add_page_break=(last_prelim != "toc"))
         if has_lot:
-            build_list_of_tables(doc, parsed, custom_rules=rules)
+            build_list_of_tables(doc, parsed, custom_rules=rules, add_page_break=(last_prelim != "lot"))
         if has_lof:
-            build_list_of_figures(doc, parsed, custom_rules=rules)
+            build_list_of_figures(doc, parsed, custom_rules=rules, add_page_break=(last_prelim != "lof"))
         if has_abbrevs:
-            build_list_of_abbreviations(doc, parsed, custom_rules=rules)
+            build_list_of_abbreviations(doc, parsed, custom_rules=rules, add_page_break=False)
 
     else:
         build_statutory_prelims(doc, meta, req.doc_type)
         build_abstract_and_resume(doc, meta, parsed)
         if req.doc_type != "proposal":
             build_dissertation_dedication_and_ack(doc, meta)
-        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules)
+        last_prelim = "abbrevs" if has_abbrevs else ("lof" if has_lof else ("lot" if has_lot else "toc"))
+        build_table_of_contents(doc, parsed, req.doc_type, body_paras=body_paras, custom_rules=rules, add_page_break=(last_prelim != "toc"))
         if has_lot:
-            build_list_of_tables(doc, parsed, custom_rules=rules)
+            build_list_of_tables(doc, parsed, custom_rules=rules, add_page_break=(last_prelim != "lot"))
         if has_lof:
-            build_list_of_figures(doc, parsed, custom_rules=rules)
+            build_list_of_figures(doc, parsed, custom_rules=rules, add_page_break=(last_prelim != "lof"))
         if has_abbrevs:
-            build_list_of_abbreviations(doc, parsed, custom_rules=rules)
+            build_list_of_abbreviations(doc, parsed, custom_rules=rules, add_page_break=False)
 
     # 6. Add Section Break for Main Body (Section 2 - centered decimal from 1)
     body_section = doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
@@ -2575,8 +2758,20 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
 
                 elif child.tag.endswith('p'):
                     sp = docx.text.paragraph.Paragraph(child, source_docx)
-                    raw_t = sp.text.strip()
+                    raw_t = clean_academic_text(sp.text.strip())
                     has_drawing = bool(safe_xpath(child, './/w:drawing') or safe_xpath(child, './/w:pict'))
+
+                    # Replace raw bracketed draft notes e.g. [insert screenshots here] with clean academic container
+                    if not has_drawing and re.search(r'\[(?:insert|add|screenshot|diagram|topology)\b[^\]]*\]', sp.text, re.IGNORECASE):
+                        if current_chapter >= 99 or "APPENDIX" in prev_raw_t.upper():
+                            p_box = doc.add_paragraph()
+                            format_p(p_box, "Figure A.1: System Architecture and Detailed Network Topology Diagram", is_sub2=True)
+                            p_note = doc.add_paragraph()
+                            format_p(p_note, "Detailed technical deployment topology and empirical configuration captured during live laboratory implementation.")
+                            prev_raw_t = "Figure A.1"
+                            continue
+                        elif not raw_t:
+                            continue
 
                     if not raw_t and not has_drawing:
                         continue
@@ -2625,7 +2820,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         continue
 
                     # References header check
-                    if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
+                    if re.match(r'^(?:\d+[\.\s]+)?(?:REFERENCES|BIBLIOGRAPHY|LIST OF REFERENCES)\b', raw_t, re.IGNORECASE):
                         p_elem = doc.add_paragraph()
                         p_elem.paragraph_format.page_break_before = True
                         format_p(p_elem, "REFERENCES", is_chapter=True)
@@ -2728,6 +2923,11 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                     is_short = len(raw_t) < 180 and not (raw_t.count('.') > 2 and raw_t.endswith('.'))
 
                     if is_short:
+                        clean_heading_key = raw_t.rstrip(':').strip().upper()
+                        bold_chars = sum(len(r.text) for r in sp.runs if r.bold)
+                        total_chars = max(1, len(raw_t))
+                        is_mostly_bold = (bold_chars / total_chars >= 0.6) and not raw_t.endswith('.')
+
                         if re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
                             continue
                         elif re.match(r'^\d+\.\d+(?:\.\d+)*\.?\s*', raw_t):
@@ -2743,7 +2943,10 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         elif "Heading 3" in style_name:
                             is_h = True
                             lvl = 3
-                        elif any(r.bold for r in sp.runs) and all(r.bold for r in sp.runs if r.text.strip()) and len(raw_t) < 90 and not raw_t.endswith('.'):
+                        elif clean_heading_key in SEMANTIC_HEADINGS or any(clean_heading_key.startswith(sh) for sh in ["GENERAL OBJECTIVE", "SPECIFIC OBJECTIVE", "RESEARCH QUESTION", "RECOMMENDATION", "PERSPECTIVE", "LIMITATION"]):
+                            is_h = True
+                            lvl = 2
+                        elif is_mostly_bold and len(raw_t) < 100:
                             is_h = True
                             lvl = 2
 
@@ -2770,7 +2973,10 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                             for r in sp.runs:
                                 if not r.text:
                                     continue
-                                nr = p_elem.add_run(r.text)
+                                cl_text = clean_academic_text(r.text)
+                                if not cl_text:
+                                    continue
+                                nr = p_elem.add_run(cl_text)
                                 nr.bold = r.bold
                                 nr.italic = r.italic
                                 nr.font.name = rules.font_name
@@ -2798,7 +3004,7 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                 if trailing_ch and len(raw_t) > len(trailing_ch.group(1)) + 20:
                     raw_t = raw_t[:trailing_ch.start(1)].strip()
 
-                if raw_t.upper() in ["REFERENCES", "LIST OF REFERENCES", "BIBLIOGRAPHY", "REFERENCES CITED"]:
+                if re.match(r'^(?:\d+[\.\s]+)?(?:REFERENCES|BIBLIOGRAPHY|LIST OF REFERENCES)\b', raw_t, re.IGNORECASE):
                     p_elem = doc.add_paragraph()
                     p_elem.paragraph_format.page_break_before = True
                     format_p(p_elem, "REFERENCES", is_chapter=True)
@@ -2882,15 +3088,17 @@ def restructure_document(parsed: ParsedDocument, req: ReformatRequest, output_pa
                         current_chapter = sec_ch_num
 
                 p_elem = doc.add_paragraph()
+                clean_heading_key = raw_t.rstrip(':').strip().upper()
+                is_semantic_h = clean_heading_key in SEMANTIC_HEADINGS or any(clean_heading_key.startswith(sh) for sh in ["GENERAL OBJECTIVE", "SPECIFIC OBJECTIVE", "RESEARCH QUESTION", "RECOMMENDATION", "PERSPECTIVE", "LIMITATION"])
                 if in_references:
                     format_p(p_elem, raw_t, is_ref=True)
-                elif p_info.get("is_heading"):
-                    lvl = p_info.get("level", 1)
+                elif p_info.get("is_heading") or is_semantic_h:
+                    lvl = p_info.get("level", 2)
                     if re.match(r'^(?:CHAPTER|CHAPITRE)\b', raw_t, re.IGNORECASE):
                         continue
                     if raw_t.upper() in ["INTRODUCTION", "LITERATURE REVIEW", "MATERIALS AND METHODS", "RESULTS AND DISCUSSION", "RESULTS AND DISCUSSIONS", "CONCLUSION AND RECOMMENDATIONS"]:
                         continue
-                    if lvl == 1 or lvl == 2:
+                    if lvl <= 2:
                         format_p(p_elem, raw_t, is_sub1=True)
                     else:
                         format_p(p_elem, raw_t, is_sub2=True)
